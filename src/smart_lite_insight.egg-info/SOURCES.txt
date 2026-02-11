@@ -1,9 +1,11 @@
-README.md
 pyproject.toml
-src/__init__.py
+src/ingest.py
+src/validate.py
 src/smart_lite_insight.egg-info/PKG-INFO
 src/smart_lite_insight.egg-info/SOURCES.txt
 src/smart_lite_insight.egg-info/dependency_links.txt
 src/smart_lite_insight.egg-info/requires.txt
 src/smart_lite_insight.egg-info/top_level.txt
+tests/test_ingest.py
 tests/test_smoke.py
+tests/test_validate.py
