@@ -1,0 +1,115 @@
+Metadata-Version: 2.4
+Name: smart-lite-insight
+Version: 0.1.0
+Summary: Edge-AI Energy Monitoring and Anomaly Detection on Raspberry Pi 5
+Author: Tolu
+License: MIT
+Requires-Python: >=3.11
+Description-Content-Type: text/markdown
+Requires-Dist: pandas<3,>=2.2
+Requires-Dist: numpy>=1.26
+Requires-Dist: apscheduler<4,>=3.10
+Requires-Dist: scikit-learn<2,>=1.4
+Requires-Dist: joblib>=1.3
+Requires-Dist: fastapi<1,>=0.110
+Requires-Dist: uvicorn[standard]<1,>=0.29
+Requires-Dist: streamlit<2,>=1.35
+Requires-Dist: plotly<6,>=5.22
+Requires-Dist: python-dotenv>=1.0
+Requires-Dist: loguru>=0.7
+Provides-Extra: dev
+Requires-Dist: pytest>=8.1; extra == "dev"
+Requires-Dist: pytest-cov>=5.0; extra == "dev"
+Requires-Dist: black>=24.4; extra == "dev"
+Requires-Dist: ruff>=0.4; extra == "dev"
+Requires-Dist: ipykernel>=6.29; extra == "dev"
+Requires-Dist: notebook>=7.1; extra == "dev"
+Requires-Dist: pre-commit>=3.7; extra == "dev"
+
+# Smart-Lite Insight
+
+**Edge-AI Energy Monitoring & Anomaly Detection on Raspberry Pi 5**
+
+An end-to-end machine learning pipeline that ingests household energy data, detects anomalies using Isolation Forest, serves predictions via FastAPI, and visualises results in a Streamlit dashboard — all running locally on a Raspberry Pi 5 (8 GB).
+
+## Project Status
+
+🚧 **Phase 1 — Data Engineering Foundation** (in progress)
+
+## Architecture
+
+```
+[UCI Energy Dataset / Smart Plug]
+            ↓
+   [Data Ingestion Service]
+    (Python + SQLite + cron)
+            ↓
+     [ML Training Pipeline]
+   (Pandas + Scikit-learn)
+            ↓
+   [FastAPI Inference API]
+   (On-device anomaly scoring)
+            ↓
+    [Streamlit Dashboard]
+   (Live charts + alerts)
+```
+
+## Quick Start
+
+```bash
+# 1. Clone and enter the repo
+git clone https://github.com/ToluPeazy/smart-lite-insight.git
+cd smart-lite-insight
+
+# 2. Create virtual environment
+python3 -m venv .venv
+source .venv/bin/activate   # Windows: .venv\Scripts\activate
+
+# 3. Install dependencies
+pip install -e ".[dev]"
+
+# 4. Set up environment variables
+cp .env.example .env
+
+# 5. Install pre-commit hooks
+pre-commit install
+```
+
+## Project Structure
+
+```
+smart-lite-insight/
+├── data/
+│   ├── raw/               # Original datasets
+│   └── processed/         # Cleaned data & SQLite DB
+├── notebooks/             # Exploration & analysis
+├── src/
+│   ├── ingest.py          # Data collection & DB loading
+│   ├── features.py        # Feature engineering
+│   ├── train.py           # Model training
+│   ├── serve.py           # FastAPI inference endpoint
+│   └── detect.py          # Anomaly detection logic
+├── dashboard/
+│   └── app.py             # Streamlit dashboard
+├── models/                # Saved model artifacts (.joblib)
+├── tests/                 # Unit & integration tests
+├── docs/                  # Architecture diagrams & guides
+├── pyproject.toml         # All Python config (deps, linting, testing)
+├── .pre-commit-config.yaml
+└── .env.example
+```
+
+## Tech Stack
+
+| Layer | Tools |
+|-------|-------|
+| Data | pandas, SQLite, APScheduler |
+| ML | scikit-learn (Isolation Forest), joblib |
+| API | FastAPI, uvicorn |
+| Dashboard | Streamlit, Plotly |
+| Quality | black, ruff, pytest, pre-commit |
+| Hardware | Raspberry Pi 5 (8 GB) |
+
+## License
+
+MIT

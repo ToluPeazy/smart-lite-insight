@@ -1,0 +1,40 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "title": "Smart-Lite Insight Telemetry Schema",
+  "version": "1.0",
+  "type": "object",
+  "required": ["schema_version", "site_id", "device_id", "timestamp", "metrics"],
+  "properties": {
+    "schema_version": {
+      "type": "string",
+      "const": "1.0"
+    },
+    "site_id": {
+      "type": "string",
+      "pattern": "^[a-z0-9-]+$"
+    },
+    "device_id": {
+      "type": "string",
+      "pattern": "^[a-z0-9-]+$"
+    },
+    "timestamp": {
+      "type": "string",
+      "format": "date-time"
+    },
+    "metrics": {
+      "type": "object",
+      "required": ["global_active_power_kw"],
+      "properties": {
+        "global_active_power_kw": { "type": "number", "minimum": 0 },
+        "global_reactive_power_kw": { "type": "number", "minimum": 0 },
+        "voltage_v": { "type": "number", "minimum": 0 },
+        "global_intensity_a": { "type": "number", "minimum": 0 },
+        "sub_metering_1_wh": { "type": "number", "minimum": 0 },
+        "sub_metering_2_wh": { "type": "number", "minimum": 0 },
+        "sub_metering_3_wh": { "type": "number", "minimum": 0 }
+      },
+      "additionalProperties": false
+    }
+  },
+  "additionalProperties": false
+}
