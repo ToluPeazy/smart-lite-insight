@@ -1,4 +1,6 @@
 pyproject.toml
+seed/__init__.py
+seed/replayer.py
 smart_lite_insight.egg-info/PKG-INFO
 smart_lite_insight.egg-info/SOURCES.txt
 smart_lite_insight.egg-info/dependency_links.txt
@@ -7,5 +9,6 @@ smart_lite_insight.egg-info/top_level.txt
 src/ingest.py
 src/validate.py
 tests/test_ingest.py
+tests/test_replayer.py
 tests/test_smoke.py
 tests/test_validate.py

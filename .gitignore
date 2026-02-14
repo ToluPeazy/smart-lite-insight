@@ -1,0 +1,49 @@
+# ── Python ──
+__pycache__/
+*.py[cod]
+*.egg-info/
+dist/
+build/
+.eggs/
+
+# ── Virtual Environment ──
+.venv/
+venv/
+env/
+
+# ── IDE ──
+.idea/
+*.swp
+*.swo
+.DS_Store
+Thumbs.db
+
+# ── Jupyter ──
+.ipynb_checkpoints/
+
+# ── Testing ──
+.pytest_cache/
+.coverage
+htmlcov/
+
+# ── Environment Variables ──
+.env
+
+# ── Data (keep structure, ignore large files) ──
+data/raw/*.csv
+data/raw/*.zip
+data/raw/*.txt
+data/processed/*.csv
+data/processed/*.db
+!data/raw/.gitkeep
+!data/processed/.gitkeep
+
+# ── Models (keep structure, ignore binaries) ──
+models/*.joblib
+models/*.pkl
+!models/.gitkeep
+!models/registry.json
+
+# ── Logs ──
+logs/
+*.log
