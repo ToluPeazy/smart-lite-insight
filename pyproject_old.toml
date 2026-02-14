@@ -12,9 +12,6 @@ dependencies = [
     "pandas>=2.2,<3",
     "numpy>=1.26",
 
-    # ── Database ──
-    # sqlite3 is stdlib — no install needed
-
     # ── Scheduling ──
     "apscheduler>=3.10,<4",
 
@@ -46,40 +43,28 @@ dev = [
     "pre-commit>=3.7",
 ]
 
-# ── Build System ──
 [build-system]
 requires = ["setuptools>=69"]
 build-backend = "setuptools.build_meta"
 
 [tool.setuptools.packages.find]
-include = ["src*", "seed*"]
+include = ["src*"]
 
-# ── Black (formatter) ──
 [tool.black]
 line-length = 88
 target-version = ["py311"]
 
-# ── Ruff (linter) ──
 [tool.ruff]
 line-length = 88
 target-version = "py311"
 
 [tool.ruff.lint]
-select = [
-    "E",    # pycodestyle errors
-    "W",    # pycodestyle warnings
-    "F",    # pyflakes
-    "I",    # isort
-    "UP",   # pyupgrade
-    "B",    # flake8-bugbear
-    "SIM",  # flake8-simplify
-]
-ignore = ["E501"]  # line length handled by black
+select = ["E", "W", "F", "I", "UP", "B", "SIM"]
+ignore = ["E501"]
 
 [tool.ruff.lint.isort]
-known-first-party = ["src", "seed"]
+known-first-party = ["src"]
 
-# ── Pytest ──
 [tool.pytest.ini_options]
 testpaths = ["tests"]
 addopts = "-v --tb=short"
