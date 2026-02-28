@@ -1,0 +1,43 @@
+services:
+  api:
+    build: .
+    container_name: smartlite-api
+    ports:
+      - "8000:8000"
+    volumes:
+      - ./data:/app/data
+      - ./models:/app/models
+    environment:
+      - DB_PATH=data/processed/energy.db
+    command: uvicorn src.serve:app --host 0.0.0.0 --port 8000
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://localhost:8000/health')"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+
+  dashboard:
+    build: .
+    container_name: smartlite-dashboard
+    ports:
+      - "8501:8501"
+    volumes:
+      - ./data:/app/data
+      - ./models:/app/models
+    environment:
+      - DB_PATH=data/processed/energy.db
+    command: streamlit run dashboard/app.py --server.port 8501 --server.address 0.0.0.0 --server.headless true
+    restart: unless-stopped
+    depends_on:
+      api:
+        condition: service_healthy
+
+  seed:
+    build: .
+    container_name: smartlite-seed
+    volumes:
+      - ./data:/app/data
+    command: python -m seed.replayer --days 7
+    profiles:
+      - seed

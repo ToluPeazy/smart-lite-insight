@@ -1,0 +1,15 @@
+.venv/
+venv/
+.git/
+.pytest_cache/
+__pycache__/
+*.pyc
+*.egg-info/
+data/raw/*.txt
+data/raw/*.zip
+data/raw/*.csv
+data/processed/*.db
+notebooks/
+.vscode/
+.env
+*.log
