@@ -422,12 +422,12 @@ def render_anomaly_table(scored: pd.DataFrame | None):
     display_df.index = display_df.index.strftime("%Y-%m-%d %H:%M")
     display_df.columns = ["Power (kW)", "Voltage (V)", "Anomaly Score"]
 
+    display_df["Power (kW)"] = display_df["Power (kW)"].round(3)
+    display_df["Voltage (V)"] = display_df["Voltage (V)"].round(1)
+    display_df["Anomaly Score"] = display_df["Anomaly Score"].round(4)
+
     st.dataframe(
-        display_df.head(100).style.format({
-            "Power (kW)": "{:.3f}",
-            "Voltage (V)": "{:.1f}",
-            "Anomaly Score": "{:.4f}",
-        }).background_gradient(subset=["Anomaly Score"], cmap="Reds_r"),
+        display_df.head(100),
         use_container_width=True,
         height=400,
     )
@@ -440,38 +440,49 @@ def main():
     """Main application entry point."""
     params = render_sidebar()
 
-    # Load data
-    start_str = params["start_date"].isoformat()
-    end_str = (params["end_date"] + timedelta(days=1)).isoformat()
+    # Tabs
+    tab_dashboard, tab_chat = st.tabs(["📊 Dashboard", "💬 AI Chat"])
 
-    df = load_data(params["site_id"], start_str, end_str)
+    with tab_dashboard:
+        # Load data
+        start_str = params["start_date"].isoformat()
+        end_str = (params["end_date"] + timedelta(days=1)).isoformat()
 
-    if df.empty:
-        st.warning("No data found for the selected time range and site.")
-        return
+        df = load_data(params["site_id"], start_str, end_str)
 
-    # Score for anomalies if requested
-    scored = None
-    if params["show_anomalies"]:
-        with st.spinner("Scoring for anomalies..."):
-            scored = score_data(df)
+        if df.empty:
+            st.warning("No data found for the selected time range and site.")
+        else:
+            # Score for anomalies if requested
+            scored = None
+            if params["show_anomalies"]:
+                with st.spinner("Scoring for anomalies..."):
+                    scored = score_data(df)
 
-    # Render
-    render_metrics(df, scored)
-    st.markdown("---")
+            # Render
+            render_metrics(df, scored)
+            st.markdown("---")
 
-    render_consumption_chart(df, scored, params["resample"])
+            render_consumption_chart(df, scored, params["resample"])
 
-    col_left, col_right = st.columns(2)
-    with col_left:
-        render_voltage_chart(df, params["resample"])
-    with col_right:
-        render_submetering_chart(df, params["resample"])
+            col_left, col_right = st.columns(2)
+            with col_left:
+                render_voltage_chart(df, params["resample"])
+            with col_right:
+                render_submetering_chart(df, params["resample"])
 
-    st.markdown("---")
+            st.markdown("---")
 
-    if params["show_anomalies"]:
-        render_anomaly_table(scored)
+            if params["show_anomalies"]:
+                render_anomaly_table(scored)
+
+    with tab_chat:
+        try:
+            from dashboard.chat import render_chat_tab
+        except ModuleNotFoundError:
+            from chat import render_chat_tab
+
+        render_chat_tab()
 
 
 if __name__ == "__main__":
