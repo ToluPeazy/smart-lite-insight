@@ -14,6 +14,7 @@ Usage:
 """
 
 import json
+import os
 import sqlite3
 from datetime import datetime, timedelta
 from typing import Any
@@ -25,8 +26,8 @@ from src.train import DEFAULT_DB_PATH
 
 # ── Configuration ──
 
-OLLAMA_BASE_URL = "http://localhost:11434"
-OLLAMA_MODEL = "llama3.1:8b"
+OLLAMA_BASE_URL = os.getenv("OLLAMA_BASE_URL", "http://localhost:11434")
+OLLAMA_MODEL = os.getenv("OLLAMA_MODEL", "llama3.1:8b")
 
 SYSTEM_PROMPT = """You are an energy monitoring assistant for Smart-Lite Insight, a household energy anomaly detection system running on a Raspberry Pi 5.
 

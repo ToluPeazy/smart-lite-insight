@@ -1,4 +1,4 @@
-.PHONY: help dev build up down logs seed train test clean
+.PHONY: help dev build up down logs seed train test lint fmt pre-commit clean
 
 help: ## Show this help
 	@grep -E '^[a-zA-Z_-]+:.*?## .*$$' $(MAKEFILE_LIST) | sort | \
@@ -12,8 +12,20 @@ dev: ## Run API + dashboard locally (no Docker)
 	uvicorn src.serve:app --host 0.0.0.0 --port 8000 --reload &
 	streamlit run dashboard/app.py --server.port 8501 --server.headless true
 
-test: ## Run all tests
-	pytest -v
+test: ## Run all tests with coverage
+	pytest -v --cov=src --cov=seed --cov-report=term-missing
+
+lint: ## Check formatting and linting (black + ruff)
+	black --check --diff src/ dashboard/ seed/ tests/
+	ruff check src/ dashboard/ seed/ tests/
+
+fmt: ## Auto-format code (black + ruff --fix)
+	black src/ dashboard/ seed/ tests/
+	ruff check --fix src/ dashboard/ seed/ tests/
+
+pre-commit: ## Install and run pre-commit hooks
+	pre-commit install
+	pre-commit run --all-files
 
 train: ## Train the anomaly detection model
 	python -m src.train

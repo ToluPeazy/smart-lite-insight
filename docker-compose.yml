@@ -9,6 +9,8 @@ services:
       - ./models:/app/models
     environment:
       - DB_PATH=data/processed/energy.db
+      - OLLAMA_BASE_URL=${OLLAMA_BASE_URL:-http://localhost:11434}
+      - OLLAMA_MODEL=${OLLAMA_MODEL:-llama3.1:8b}
     command: uvicorn src.serve:app --host 0.0.0.0 --port 8000
     restart: unless-stopped
     healthcheck:
@@ -16,6 +18,14 @@ services:
       interval: 30s
       timeout: 10s
       retries: 3
+    deploy:
+      resources:
+        limits:
+          cpus: "1.5"      # leave ~0.5 cores for OS on Pi 5 (4-core)
+          memory: 512M
+        reservations:
+          cpus: "0.25"
+          memory: 128M
 
   dashboard:
     build: .
@@ -27,11 +37,21 @@ services:
       - ./models:/app/models
     environment:
       - DB_PATH=data/processed/energy.db
+      - OLLAMA_BASE_URL=${OLLAMA_BASE_URL:-http://localhost:11434}
+      - OLLAMA_MODEL=${OLLAMA_MODEL:-llama3.1:8b}
     command: streamlit run dashboard/app.py --server.port 8501 --server.address 0.0.0.0 --server.headless true
     restart: unless-stopped
     depends_on:
       api:
         condition: service_healthy
+    deploy:
+      resources:
+        limits:
+          cpus: "1.0"
+          memory: 384M
+        reservations:
+          cpus: "0.25"
+          memory: 64M
 
   seed:
     build: .
@@ -41,3 +61,8 @@ services:
     command: python -m seed.replayer --days 7
     profiles:
       - seed
+    deploy:
+      resources:
+        limits:
+          cpus: "0.5"
+          memory: 256M
