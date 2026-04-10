@@ -19,7 +19,7 @@ import pandas as pd
 from loguru import logger
 
 from src.features import build_feature_matrix
-from src.train import DEFAULT_MODELS_DIR, get_numeric_features
+from src.train import DEFAULT_MODELS_DIR
 
 
 class AnomalyDetector:
@@ -29,7 +29,9 @@ class AnomalyDetector:
     methods to score individual readings or DataFrames.
     """
 
-    def __init__(self, models_dir: str = DEFAULT_MODELS_DIR, version: str | None = None):
+    def __init__(
+        self, models_dir: str = DEFAULT_MODELS_DIR, version: str | None = None
+    ):
         """Initialise the detector by loading a model.
 
         Args:

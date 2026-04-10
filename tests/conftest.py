@@ -1,7 +1,6 @@
 """Shared test fixtures for Smart-Lite Insight."""
 
 import os
-import sqlite3
 import tempfile
 from pathlib import Path
 

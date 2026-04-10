@@ -74,7 +74,10 @@ select = [
     "B",    # flake8-bugbear
     "SIM",  # flake8-simplify
 ]
-ignore = ["E501"]  # line length handled by black
+ignore = [
+    "E501",   # line length handled by black
+    "B008",   # FastAPI Query()/Depends() in function defaults is intentional
+]
 
 [tool.ruff.lint.isort]
 known-first-party = ["src", "seed"]

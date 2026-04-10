@@ -24,13 +24,13 @@ UCI_FIELD_COUNT = 9
 
 # Reasonable physical bounds for validation
 BOUNDS = {
-    "global_active_power": (0.0, 15.0),    # kW — typical household max ~11kW
-    "global_reactive_power": (0.0, 5.0),    # kW
-    "voltage": (100.0, 300.0),              # V — EU nominal 230V ± wide margin
-    "global_intensity": (0.0, 80.0),        # A
-    "sub_metering_1": (0.0, 100.0),         # Wh per minute
-    "sub_metering_2": (0.0, 100.0),         # Wh per minute
-    "sub_metering_3": (0.0, 100.0),         # Wh per minute
+    "global_active_power": (0.0, 15.0),  # kW — typical household max ~11kW
+    "global_reactive_power": (0.0, 5.0),  # kW
+    "voltage": (100.0, 300.0),  # V — EU nominal 230V ± wide margin
+    "global_intensity": (0.0, 80.0),  # A
+    "sub_metering_1": (0.0, 100.0),  # Wh per minute
+    "sub_metering_2": (0.0, 100.0),  # Wh per minute
+    "sub_metering_3": (0.0, 100.0),  # Wh per minute
 }
 
 
@@ -52,9 +52,7 @@ def parse_uci_row(raw_line: str) -> dict | None:
     parts = raw_line.strip().split(";")
 
     if len(parts) != UCI_FIELD_COUNT:
-        raise ValidationError(
-            f"Expected {UCI_FIELD_COUNT} fields, got {len(parts)}"
-        )
+        raise ValidationError(f"Expected {UCI_FIELD_COUNT} fields, got {len(parts)}")
 
     # Check for missing values (represented as '?' in the UCI dataset)
     if "?" in parts:
@@ -63,9 +61,7 @@ def parse_uci_row(raw_line: str) -> dict | None:
     date_str, time_str = parts[0], parts[1]
 
     try:
-        timestamp = datetime.strptime(
-            f"{date_str} {time_str}", "%d/%m/%Y %H:%M:%S"
-        )
+        timestamp = datetime.strptime(f"{date_str} {time_str}", "%d/%m/%Y %H:%M:%S")
     except ValueError as e:
         raise ValidationError(f"Invalid date/time: {date_str} {time_str}") from e
 
@@ -101,9 +97,7 @@ def validate_metrics(metrics: dict) -> list[str]:
     for field, (low, high) in BOUNDS.items():
         value = metrics.get(field)
         if value is not None and not (low <= value <= high):
-            warnings.append(
-                f"{field}={value} out of bounds [{low}, {high}]"
-            )
+            warnings.append(f"{field}={value} out of bounds [{low}, {high}]")
     return warnings
 
 

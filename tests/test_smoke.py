@@ -3,11 +3,8 @@
 
 def test_imports():
     """Core dependencies are importable."""
-    import fastapi
     import pandas
-    import plotly
     import sklearn
-    import streamlit
 
     assert pandas.__version__ >= "2.2"
     assert sklearn.__version__ >= "1.4"

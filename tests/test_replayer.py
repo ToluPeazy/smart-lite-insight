@@ -2,8 +2,6 @@
 
 from datetime import datetime
 
-import pytest
-
 from seed.replayer import (
     generate_dataset,
     generate_reading,
@@ -91,7 +89,10 @@ class TestGenerateDataset:
     def test_reproducible_with_seed(self):
         r1 = generate_dataset(days=1, seed=42)
         r2 = generate_dataset(days=1, seed=42)
-        assert r1[0]["metrics"]["global_active_power"] == r2[0]["metrics"]["global_active_power"]
+        assert (
+            r1[0]["metrics"]["global_active_power"]
+            == r2[0]["metrics"]["global_active_power"]
+        )
         assert r1[-1]["metrics"]["voltage"] == r2[-1]["metrics"]["voltage"]
 
     def test_different_seeds_differ(self):

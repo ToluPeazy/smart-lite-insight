@@ -27,13 +27,6 @@ import pandas as pd
 from loguru import logger
 from sklearn.ensemble import IsolationForest
 from sklearn.neighbors import LocalOutlierFactor
-from sklearn.metrics import (
-    classification_report,
-    f1_score,
-    precision_recall_curve,
-    precision_score,
-    recall_score,
-)
 from sklearn.preprocessing import StandardScaler
 
 from src.features import build_feature_matrix
@@ -95,7 +88,9 @@ def load_training_data(
     logger.info(f"Loaded {len(df):,} raw readings for site '{site_id}'")
 
     df_features = build_feature_matrix(df, drop_na=True)
-    logger.info(f"Feature matrix: {df_features.shape[0]:,} rows × {df_features.shape[1]} columns")
+    logger.info(
+        f"Feature matrix: {df_features.shape[0]:,} rows × {df_features.shape[1]} columns"
+    )
 
     return df_features
 
@@ -226,8 +221,12 @@ def evaluate_model(
     logger.info(f"Model: {model_name}")
     logger.info(f"  Total samples:  {n_total:,}")
     logger.info(f"  Anomalies:      {n_anomalies:,} ({anomaly_rate:.2%})")
-    logger.info(f"  Score range:    [{score_stats['min']:.3f}, {score_stats['max']:.3f}]")
-    logger.info(f"  Score mean±std: {score_stats['mean']:.3f} ± {score_stats['std']:.3f}")
+    logger.info(
+        f"  Score range:    [{score_stats['min']:.3f}, {score_stats['max']:.3f}]"
+    )
+    logger.info(
+        f"  Score mean±std: {score_stats['mean']:.3f} ± {score_stats['std']:.3f}"
+    )
     logger.info(f"{'─' * 50}")
 
     return metrics
@@ -395,7 +394,10 @@ def train_pipeline(
     if_model = train_isolation_forest(X, contamination=contamination)
     if_metrics = evaluate_model(if_model, X, "Isolation Forest")
     version = save_model(
-        if_model, scaler, feature_names, if_metrics,
+        if_model,
+        scaler,
+        feature_names,
+        if_metrics,
         model_name="isolation_forest",
     )
     results["isolation_forest"] = {
@@ -409,7 +411,10 @@ def train_pipeline(
         lof_model = train_lof(X, contamination=contamination)
         lof_metrics = evaluate_model(lof_model, X, "Local Outlier Factor")
         lof_version = save_model(
-            lof_model, scaler, feature_names, lof_metrics,
+            lof_model,
+            scaler,
+            feature_names,
+            lof_metrics,
             model_name="lof",
         )
         results["lof"] = {
@@ -421,9 +426,11 @@ def train_pipeline(
         logger.info("\n" + "=" * 50)
         logger.info("MODEL COMPARISON")
         logger.info("=" * 50)
-        for name, r in results.items():
+        for _name, r in results.items():
             m = r["metrics"]
-            logger.info(f"  {m['model_name']}: {m['n_anomalies']:,} anomalies ({m['anomaly_rate']:.2%})")
+            logger.info(
+                f"  {m['model_name']}: {m['n_anomalies']:,} anomalies ({m['anomaly_rate']:.2%})"
+            )
         logger.info("=" * 50)
 
     return results

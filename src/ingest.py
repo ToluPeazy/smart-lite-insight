@@ -50,8 +50,7 @@ def init_db(db_path: str) -> sqlite3.Connection:
 
     conn = sqlite3.connect(db_path)
     conn.execute("PRAGMA journal_mode=WAL")  # Better concurrent read performance
-    conn.execute(
-        """
+    conn.execute("""
         CREATE TABLE IF NOT EXISTS readings (
             id              INTEGER PRIMARY KEY AUTOINCREMENT,
             timestamp       TEXT    NOT NULL,
@@ -66,20 +65,15 @@ def init_db(db_path: str) -> sqlite3.Connection:
             sub_metering_3_wh           REAL,
             ingested_at     TEXT    NOT NULL DEFAULT (datetime('now'))
         )
-        """
-    )
-    conn.execute(
-        """
+        """)
+    conn.execute("""
         CREATE INDEX IF NOT EXISTS idx_readings_timestamp
         ON readings (timestamp)
-        """
-    )
-    conn.execute(
-        """
+        """)
+    conn.execute("""
         CREATE INDEX IF NOT EXISTS idx_readings_site_device
         ON readings (site_id, device_id)
-        """
-    )
+        """)
     conn.commit()
     return conn
 
@@ -87,7 +81,9 @@ def init_db(db_path: str) -> sqlite3.Connection:
 # ── Insertion ──
 
 
-def insert_reading(conn: sqlite3.Connection, parsed: dict, site_id: str, device_id: str) -> None:
+def insert_reading(
+    conn: sqlite3.Connection, parsed: dict, site_id: str, device_id: str
+) -> None:
     """Insert a single parsed reading into the database.
 
     Args:
@@ -121,7 +117,9 @@ def insert_reading(conn: sqlite3.Connection, parsed: dict, site_id: str, device_
     )
 
 
-def insert_batch(conn: sqlite3.Connection, rows: list[dict], site_id: str, device_id: str) -> None:
+def insert_batch(
+    conn: sqlite3.Connection, rows: list[dict], site_id: str, device_id: str
+) -> None:
     """Insert a batch of parsed readings.
 
     Args:
@@ -133,18 +131,20 @@ def insert_batch(conn: sqlite3.Connection, rows: list[dict], site_id: str, devic
     data = []
     for parsed in rows:
         m = parsed["metrics"]
-        data.append((
-            parsed["timestamp"].isoformat(),
-            site_id,
-            device_id,
-            m["global_active_power"],
-            m["global_reactive_power"],
-            m["voltage"],
-            m["global_intensity"],
-            m["sub_metering_1"],
-            m["sub_metering_2"],
-            m["sub_metering_3"],
-        ))
+        data.append(
+            (
+                parsed["timestamp"].isoformat(),
+                site_id,
+                device_id,
+                m["global_active_power"],
+                m["global_reactive_power"],
+                m["voltage"],
+                m["global_intensity"],
+                m["sub_metering_1"],
+                m["sub_metering_2"],
+                m["sub_metering_3"],
+            )
+        )
 
     conn.executemany(
         """
@@ -204,7 +204,7 @@ def bulk_load(
 
     logger.info(f"Loading dataset from {raw_path} into {db_path}")
 
-    with open(raw, "r", encoding="utf-8") as f:
+    with open(raw, encoding="utf-8") as f:
         # Skip header line
         header = f.readline()
         logger.debug(f"Header: {header.strip()}")
@@ -300,7 +300,7 @@ def live_ingest(
     logger.info("Press Ctrl+C to stop")
 
     try:
-        with open(raw, "r", encoding="utf-8") as f:
+        with open(raw, encoding="utf-8") as f:
             f.readline()  # Skip header
 
             for line in f:
