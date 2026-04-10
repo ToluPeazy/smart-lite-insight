@@ -13,9 +13,8 @@ Usage:
 
 import sqlite3
 from contextlib import asynccontextmanager
-from datetime import datetime, timedelta
+from datetime import datetime
 
-import numpy as np
 import pandas as pd
 from fastapi import FastAPI, HTTPException, Query
 from loguru import logger
@@ -59,12 +58,18 @@ class ReadingInput(BaseModel):
 
     timestamp: datetime = Field(..., description="Reading timestamp (ISO 8601)")
     global_active_power_kw: float = Field(..., ge=0, description="Active power in kW")
-    global_reactive_power_kw: float = Field(..., ge=0, description="Reactive power in kW")
+    global_reactive_power_kw: float = Field(
+        ..., ge=0, description="Reactive power in kW"
+    )
     voltage_v: float = Field(..., gt=0, description="Voltage in volts")
-    global_intensity_a: float = Field(..., ge=0, description="Current intensity in amps")
+    global_intensity_a: float = Field(
+        ..., ge=0, description="Current intensity in amps"
+    )
     sub_metering_1_wh: float = Field(..., ge=0, description="Kitchen sub-meter (Wh)")
     sub_metering_2_wh: float = Field(..., ge=0, description="Laundry sub-meter (Wh)")
-    sub_metering_3_wh: float = Field(..., ge=0, description="Water heater/AC sub-meter (Wh)")
+    sub_metering_3_wh: float = Field(
+        ..., ge=0, description="Water heater/AC sub-meter (Wh)"
+    )
 
     model_config = {
         "json_schema_extra": {
@@ -155,7 +160,7 @@ def get_db_connection(db_path: str = DEFAULT_DB_PATH) -> sqlite3.Connection:
         conn = sqlite3.connect(db_path)
         return conn
     except sqlite3.Error as e:
-        raise HTTPException(status_code=503, detail=f"Database unavailable: {e}")
+        raise HTTPException(status_code=503, detail=f"Database unavailable: {e}") from e
 
 
 def require_detector() -> AnomalyDetector:
@@ -207,7 +212,9 @@ async def model_info():
     return ModelInfoResponse(**info)
 
 
-@app.post("/anomaly/score", response_model=BatchScoreResponse, tags=["Anomaly Detection"])
+@app.post(
+    "/anomaly/score", response_model=BatchScoreResponse, tags=["Anomaly Detection"]
+)
 async def score_readings(request: BatchScoreRequest):
     """Score a batch of readings for anomalies.
 
@@ -227,7 +234,7 @@ async def score_readings(request: BatchScoreRequest):
             status_code=422,
             detail=f"Feature engineering failed: {e}. "
             f"Ensure readings are sequential with 1-minute intervals.",
-        )
+        ) from e
 
     if df_features.empty:
         raise HTTPException(
@@ -264,7 +271,9 @@ async def score_readings(request: BatchScoreRequest):
 async def get_timeseries(
     start: datetime = Query(None, description="Start timestamp (ISO 8601)"),
     end: datetime = Query(None, description="End timestamp (ISO 8601)"),
-    hours: int = Query(24, ge=1, le=168, description="Hours of data (if start/end not given)"),
+    hours: int = Query(
+        24, ge=1, le=168, description="Hours of data (if start/end not given)"
+    ),
     site_id: str = Query("home-01", description="Site identifier"),
     include_anomalies: bool = Query(False, description="Score data for anomalies"),
     resample: str = Query(None, description="Resample interval (e.g. '15min', '1h')"),
@@ -286,7 +295,8 @@ async def get_timeseries(
             ORDER BY timestamp
         """
         df = pd.read_sql_query(
-            query, conn,
+            query,
+            conn,
             params=(site_id, start.isoformat(), end.isoformat()),
             parse_dates=["timestamp"],
         )
@@ -301,7 +311,8 @@ async def get_timeseries(
             LIMIT ?
         """
         df = pd.read_sql_query(
-            query, conn,
+            query,
+            conn,
             params=(site_id, hours * 60),
             parse_dates=["timestamp"],
         )
@@ -310,7 +321,9 @@ async def get_timeseries(
     conn.close()
 
     if df.empty:
-        raise HTTPException(status_code=404, detail="No data found for the given parameters")
+        raise HTTPException(
+            status_code=404, detail="No data found for the given parameters"
+        )
 
     df = df.set_index("timestamp")
 
@@ -378,7 +391,8 @@ async def get_anomalies(
             ORDER BY timestamp
         """
         df = pd.read_sql_query(
-            query, conn,
+            query,
+            conn,
             params=(site_id, start.isoformat(), end.isoformat()),
             parse_dates=["timestamp"],
         )
@@ -393,7 +407,8 @@ async def get_anomalies(
             LIMIT ?
         """
         df = pd.read_sql_query(
-            query, conn,
+            query,
+            conn,
             params=(site_id, hours * 60),
             parse_dates=["timestamp"],
         )
@@ -410,18 +425,22 @@ async def get_anomalies(
         df_features = build_feature_matrix(df, drop_na=True)
         scored = det.score_dataframe(df_features)
     except Exception as e:
-        raise HTTPException(status_code=422, detail=f"Scoring failed: {e}")
+        raise HTTPException(status_code=422, detail=f"Scoring failed: {e}") from e
 
     anomalies = det.get_anomalies(scored, top_n=top_n)
 
     results = []
     for ts, row in anomalies.iterrows():
-        results.append({
-            "timestamp": ts.isoformat(),
-            "anomaly_score": round(float(row["anomaly_score"]), 4),
-            "global_active_power_kw": round(float(row["global_active_power_kw"]), 3),
-            "voltage_v": round(float(row["voltage_v"]), 2),
-        })
+        results.append(
+            {
+                "timestamp": ts.isoformat(),
+                "anomaly_score": round(float(row["anomaly_score"]), 4),
+                "global_active_power_kw": round(
+                    float(row["global_active_power_kw"]), 3
+                ),
+                "voltage_v": round(float(row["voltage_v"]), 2),
+            }
+        )
 
     return {
         "anomalies": results,

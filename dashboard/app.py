@@ -165,7 +165,10 @@ def render_sidebar():
     default_end = st.session_state.get("end_date", max_date.date())
 
     start_date = st.sidebar.date_input(
-        "Start", value=default_start, min_value=min_date.date(), max_value=max_date.date()
+        "Start",
+        value=default_start,
+        min_value=min_date.date(),
+        max_value=max_date.date(),
     )
     end_date = st.sidebar.date_input(
         "End", value=default_end, min_value=min_date.date(), max_value=max_date.date()
@@ -295,9 +298,7 @@ def render_voltage_chart(df: pd.DataFrame, resample: str | None):
     plot_df = plot_df.set_index("timestamp")
 
     if resample:
-        plot_df = plot_df.resample(resample).agg(
-            {"voltage_v": ["mean", "min", "max"]}
-        )
+        plot_df = plot_df.resample(resample).agg({"voltage_v": ["mean", "min", "max"]})
         plot_df.columns = ["mean", "min", "max"]
     else:
         plot_df = plot_df[["voltage_v"]].rename(columns={"voltage_v": "mean"})
@@ -315,12 +316,19 @@ def render_voltage_chart(df: pd.DataFrame, resample: str | None):
     )
 
     # EU nominal voltage reference lines
-    fig.add_hline(y=230, line_dash="dash", line_color="gray", opacity=0.5,
-                  annotation_text="Nominal (230V)")
-    fig.add_hline(y=253, line_dash="dot", line_color="red", opacity=0.3,
-                  annotation_text="+10%")
-    fig.add_hline(y=207, line_dash="dot", line_color="red", opacity=0.3,
-                  annotation_text="-10%")
+    fig.add_hline(
+        y=230,
+        line_dash="dash",
+        line_color="gray",
+        opacity=0.5,
+        annotation_text="Nominal (230V)",
+    )
+    fig.add_hline(
+        y=253, line_dash="dot", line_color="red", opacity=0.3, annotation_text="+10%"
+    )
+    fig.add_hline(
+        y=207, line_dash="dot", line_color="red", opacity=0.3, annotation_text="-10%"
+    )
 
     fig.update_layout(
         title="Voltage Stability",
@@ -345,8 +353,16 @@ def render_submetering_chart(df: pd.DataFrame, resample: str | None):
 
     fig = go.Figure()
 
-    colors = {"sub_metering_1_wh": "#4e79a7", "sub_metering_2_wh": "#f28e2b", "sub_metering_3_wh": "#e15759"}
-    names = {"sub_metering_1_wh": "Kitchen", "sub_metering_2_wh": "Laundry", "sub_metering_3_wh": "Water/AC"}
+    colors = {
+        "sub_metering_1_wh": "#4e79a7",
+        "sub_metering_2_wh": "#f28e2b",
+        "sub_metering_3_wh": "#e15759",
+    }
+    names = {
+        "sub_metering_1_wh": "Kitchen",
+        "sub_metering_2_wh": "Laundry",
+        "sub_metering_3_wh": "Water/AC",
+    }
 
     for col, color in colors.items():
         fig.add_trace(

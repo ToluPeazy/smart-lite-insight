@@ -2,10 +2,6 @@
 
 import json
 import os
-import sqlite3
-import tempfile
-from datetime import datetime, timedelta
-from unittest.mock import patch
 
 import numpy as np
 import pandas as pd
@@ -17,7 +13,6 @@ from src.detect import AnomalyDetector
 from src.serve import app, readings_to_dataframe
 from src.train import (
     evaluate_model,
-    get_numeric_features,
     save_model,
     train_isolation_forest,
 )
@@ -36,10 +31,17 @@ def mock_detector(tmp_path):
     n = 500
     rng = np.random.default_rng(42)
     feature_names = [
-        "global_active_power_kw", "voltage_v", "global_intensity_a",
-        "hour", "is_weekend", "hour_sin", "hour_cos",
-        "global_active_power_kw_lag_1m", "global_active_power_kw_roll_mean_1h",
-        "global_active_power_kw_roll_std_1h", "global_active_power_kw_diff_1m",
+        "global_active_power_kw",
+        "voltage_v",
+        "global_intensity_a",
+        "hour",
+        "is_weekend",
+        "hour_sin",
+        "hour_cos",
+        "global_active_power_kw_lag_1m",
+        "global_active_power_kw_roll_mean_1h",
+        "global_active_power_kw_roll_std_1h",
+        "global_active_power_kw_diff_1m",
         "metered_ratio",
     ]
 
@@ -89,6 +91,7 @@ class TestHealthEndpoint:
 class TestModelInfoEndpoint:
     def test_returns_503_without_model(self, client):
         import src.serve as serve_module
+
         original = serve_module.detector
         serve_module.detector = None
         response = client.get("/model/info")
@@ -97,6 +100,7 @@ class TestModelInfoEndpoint:
 
     def test_returns_info_with_model(self, client, mock_detector):
         import src.serve as serve_module
+
         original = serve_module.detector
         serve_module.detector = mock_detector
 
@@ -112,6 +116,7 @@ class TestModelInfoEndpoint:
 class TestReadingsToDataframe:
     def test_converts_readings(self, sample_reading):
         from src.serve import ReadingInput
+
         readings = [ReadingInput(**sample_reading)]
         df = readings_to_dataframe(readings)
 
@@ -126,9 +131,9 @@ class TestScoreEndpoint:
         assert response.status_code == 422
 
     def test_validates_reading_fields(self, client):
-        response = client.post("/anomaly/score", json={
-            "readings": [{"timestamp": "2024-01-15T19:30:00"}]
-        })
+        response = client.post(
+            "/anomaly/score", json={"readings": [{"timestamp": "2024-01-15T19:30:00"}]}
+        )
         assert response.status_code == 422
 
 
@@ -149,6 +154,7 @@ class TestTimeSeriesEndpoint:
 class TestAnomaliesEndpoint:
     def test_returns_503_without_model(self, client):
         import src.serve as serve_module
+
         original = serve_module.detector
         serve_module.detector = None
 

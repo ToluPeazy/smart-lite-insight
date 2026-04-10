@@ -129,8 +129,8 @@ def add_rate_of_change(
     out[f"{target_col}_diff_5m"] = out[target_col].diff(5)
 
     prev = out[target_col].shift(1)
-    out[f"{target_col}_pct_change_1m"] = (
-        out[target_col].diff() / prev.replace(0, np.nan)
+    out[f"{target_col}_pct_change_1m"] = out[target_col].diff() / prev.replace(
+        0, np.nan
     )
 
     return out
@@ -151,9 +151,7 @@ def add_submetering_ratios(df: pd.DataFrame) -> pd.DataFrame:
     out = df.copy()
 
     out["sub_total_wh"] = (
-        out["sub_metering_1_wh"]
-        + out["sub_metering_2_wh"]
-        + out["sub_metering_3_wh"]
+        out["sub_metering_1_wh"] + out["sub_metering_2_wh"] + out["sub_metering_3_wh"]
     )
 
     out["total_wh_per_min"] = out["global_active_power_kw"] * 1000 / 60

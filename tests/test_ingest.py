@@ -1,7 +1,5 @@
 """Tests for src/ingest.py"""
 
-import sqlite3
-
 from src.ingest import init_db, insert_batch, insert_reading
 from src.validate import parse_uci_row
 
@@ -24,9 +22,7 @@ class TestInitDb:
 
     def test_creates_indices(self, tmp_db):
         conn = init_db(tmp_db)
-        cursor = conn.execute(
-            "SELECT name FROM sqlite_master WHERE type='index'"
-        )
+        cursor = conn.execute("SELECT name FROM sqlite_master WHERE type='index'")
         index_names = [row[0] for row in cursor.fetchall()]
         assert "idx_readings_timestamp" in index_names
         assert "idx_readings_site_device" in index_names
@@ -83,9 +79,7 @@ class TestInsertBatch:
         assert cursor.fetchone()[0] == 3
 
         # Check ordering is preserved
-        cursor = conn.execute(
-            "SELECT global_active_power_kw FROM readings ORDER BY id"
-        )
+        cursor = conn.execute("SELECT global_active_power_kw FROM readings ORDER BY id")
         powers = [row[0] for row in cursor.fetchall()]
         assert abs(powers[0] - 4.216) < 0.001
         assert abs(powers[1] - 5.360) < 0.001

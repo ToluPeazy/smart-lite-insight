@@ -7,7 +7,6 @@ This file is imported and rendered as a tab in dashboard/app.py.
 """
 
 import streamlit as st
-from loguru import logger
 
 
 def render_chat_tab():
@@ -33,8 +32,7 @@ def render_chat_tab():
             st.session_state.agent_error = None
         except ConnectionError:
             st.session_state.agent_error = (
-                "Cannot connect to Ollama. Make sure it's running: "
-                "`ollama serve`"
+                "Cannot connect to Ollama. Make sure it's running: " "`ollama serve`"
             )
         except Exception as e:
             st.session_state.agent_error = f"Agent initialization failed: {e}"
@@ -79,20 +77,19 @@ def render_chat_tab():
         with st.chat_message("user"):
             st.markdown(prompt)
 
-        with st.chat_message("assistant"):
-            with st.spinner("Thinking..."):
-                try:
-                    response = st.session_state.agent.chat(prompt)
-                    st.markdown(response)
-                    st.session_state.chat_messages.append(
-                        {"role": "assistant", "content": response}
-                    )
-                except Exception as e:
-                    error_msg = f"Error: {e}"
-                    st.error(error_msg)
-                    st.session_state.chat_messages.append(
-                        {"role": "assistant", "content": error_msg}
-                    )
+        with st.chat_message("assistant"), st.spinner("Thinking..."):
+            try:
+                response = st.session_state.agent.chat(prompt)
+                st.markdown(response)
+                st.session_state.chat_messages.append(
+                    {"role": "assistant", "content": response}
+                )
+            except Exception as e:
+                error_msg = f"Error: {e}"
+                st.error(error_msg)
+                st.session_state.chat_messages.append(
+                    {"role": "assistant", "content": error_msg}
+                )
 
     # Sidebar controls for chat
     with st.sidebar:
@@ -105,10 +102,12 @@ def render_chat_tab():
                 st.session_state.agent.reset()
             st.rerun()
 
-        if st.button("Show Tool Log", use_container_width=True):
-            if st.session_state.agent:
-                log = st.session_state.agent.get_tool_log()
-                if log:
-                    st.sidebar.json(log[-5:])  # Show last 5 calls
-                else:
-                    st.sidebar.info("No tool calls yet")
+        if (
+            st.button("Show Tool Log", use_container_width=True)
+            and st.session_state.agent
+        ):
+            log = st.session_state.agent.get_tool_log()
+            if log:
+                st.sidebar.json(log[-5:])  # Show last 5 calls
+            else:
+                st.sidebar.info("No tool calls yet")

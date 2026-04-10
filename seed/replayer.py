@@ -22,11 +22,9 @@ Usage:
 """
 
 import argparse
-import math
 import random
 import time
 from datetime import datetime, timedelta
-from pathlib import Path
 
 from loguru import logger
 
@@ -44,17 +42,57 @@ DEFAULT_ANOMALY_RATE = 0.01  # 1% of readings are anomalous
 # Hourly multipliers modelling a typical household pattern.
 # Index = hour of day (0-23). Values are relative power multipliers.
 WEEKDAY_PROFILE = [
-    0.15, 0.12, 0.10, 0.10, 0.10, 0.12,  # 00-05: overnight baseline
-    0.25, 0.55, 0.70, 0.50, 0.35, 0.30,  # 06-11: morning peak
-    0.35, 0.40, 0.35, 0.30, 0.35, 0.55,  # 12-17: afternoon
-    0.80, 0.90, 0.75, 0.55, 0.35, 0.20,  # 18-23: evening peak
+    0.15,
+    0.12,
+    0.10,
+    0.10,
+    0.10,
+    0.12,  # 00-05: overnight baseline
+    0.25,
+    0.55,
+    0.70,
+    0.50,
+    0.35,
+    0.30,  # 06-11: morning peak
+    0.35,
+    0.40,
+    0.35,
+    0.30,
+    0.35,
+    0.55,  # 12-17: afternoon
+    0.80,
+    0.90,
+    0.75,
+    0.55,
+    0.35,
+    0.20,  # 18-23: evening peak
 ]
 
 WEEKEND_PROFILE = [
-    0.15, 0.12, 0.10, 0.10, 0.10, 0.10,  # 00-05: overnight
-    0.15, 0.20, 0.35, 0.55, 0.60, 0.55,  # 06-11: later morning rise
-    0.50, 0.45, 0.50, 0.55, 0.60, 0.65,  # 12-17: more active afternoon
-    0.80, 0.85, 0.70, 0.50, 0.35, 0.20,  # 18-23: evening peak
+    0.15,
+    0.12,
+    0.10,
+    0.10,
+    0.10,
+    0.10,  # 00-05: overnight
+    0.15,
+    0.20,
+    0.35,
+    0.55,
+    0.60,
+    0.55,  # 06-11: later morning rise
+    0.50,
+    0.45,
+    0.50,
+    0.55,
+    0.60,
+    0.65,  # 12-17: more active afternoon
+    0.80,
+    0.85,
+    0.70,
+    0.50,
+    0.35,
+    0.20,  # 18-23: evening peak
 ]
 
 
@@ -216,7 +254,7 @@ def replay_bulk(
 
     expected_anomalies = int(len(readings) * anomaly_rate)
     logger.info("─" * 50)
-    logger.info(f"Synthetic replay complete")
+    logger.info("Synthetic replay complete")
     logger.info(f"  Days:               {days}")
     logger.info(f"  Readings generated: {len(readings):,}")
     logger.info(f"  Expected anomalies: ~{expected_anomalies}")

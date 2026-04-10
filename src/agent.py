@@ -16,8 +16,7 @@ Usage:
 import json
 import os
 import sqlite3
-from datetime import datetime, timedelta
-from typing import Any
+from datetime import datetime
 
 import requests
 from loguru import logger
@@ -204,11 +203,13 @@ def tool_get_timeseries(start: str, end: str, resample: str = "1h") -> dict:
 
         records = []
         for ts, row in df.iterrows():
-            records.append({
-                "timestamp": ts.strftime("%Y-%m-%d %H:%M"),
-                "power_kw": round(float(row["global_active_power_kw"]), 3),
-                "voltage_v": round(float(row["voltage_v"]), 1),
-            })
+            records.append(
+                {
+                    "timestamp": ts.strftime("%Y-%m-%d %H:%M"),
+                    "power_kw": round(float(row["global_active_power_kw"]), 3),
+                    "voltage_v": round(float(row["voltage_v"]), 1),
+                }
+            )
 
         return {
             "readings": records,
@@ -262,12 +263,14 @@ def tool_get_anomalies(start: str, end: str, top_n: int = 10) -> dict:
 
         results = []
         for ts, row in anomalies.iterrows():
-            results.append({
-                "timestamp": ts.strftime("%Y-%m-%d %H:%M"),
-                "power_kw": round(float(row["global_active_power_kw"]), 3),
-                "voltage_v": round(float(row["voltage_v"]), 1),
-                "anomaly_score": round(float(row["anomaly_score"]), 4),
-            })
+            results.append(
+                {
+                    "timestamp": ts.strftime("%Y-%m-%d %H:%M"),
+                    "power_kw": round(float(row["global_active_power_kw"]), 3),
+                    "voltage_v": round(float(row["voltage_v"]), 1),
+                    "anomaly_score": round(float(row["anomaly_score"]), 4),
+                }
+            )
 
         return {
             "anomalies": results,
@@ -366,12 +369,10 @@ def tool_get_date_range() -> dict:
     """Get available date range in the database."""
     try:
         conn = sqlite3.connect(DEFAULT_DB_PATH)
-        cursor = conn.execute(
-            """
+        cursor = conn.execute("""
             SELECT MIN(timestamp), MAX(timestamp), COUNT(*)
             FROM readings WHERE site_id = 'home-01'
-            """
-        )
+            """)
         row = cursor.fetchone()
         conn.close()
 
@@ -442,14 +443,16 @@ class Agent:
                 logger.warning(f"Model '{self.model}' not found. Available: {models}")
             else:
                 logger.info(f"Connected to Ollama. Model: {self.model}")
-        except requests.ConnectionError:
+        except requests.ConnectionError as err:
             logger.error(f"Cannot connect to Ollama at {self.base_url}")
             raise ConnectionError(
                 f"Ollama not reachable at {self.base_url}. "
                 "Start it with 'ollama serve' or check if it's running."
-            )
+            ) from err
 
-    def _call_ollama(self, messages: list[dict], tools: list[dict] | None = None) -> dict:
+    def _call_ollama(
+        self, messages: list[dict], tools: list[dict] | None = None
+    ) -> dict:
         """Make a chat completion request to Ollama."""
         payload = {
             "model": self.model,
@@ -486,12 +489,14 @@ class Agent:
                 result = {"error": f"Tool execution failed: {e}"}
 
         # Log the tool call
-        self.tool_log.append({
-            "timestamp": datetime.now().isoformat(),
-            "tool": tool_name,
-            "arguments": arguments,
-            "result_summary": str(result)[:200],
-        })
+        self.tool_log.append(
+            {
+                "timestamp": datetime.now().isoformat(),
+                "tool": tool_name,
+                "arguments": arguments,
+                "result_summary": str(result)[:200],
+            }
+        )
 
         return json.dumps(result, indent=2)
 
@@ -526,10 +531,12 @@ class Agent:
                 result = self._execute_tool(tool_name, arguments)
 
                 # Add tool result to messages
-                messages.append({
-                    "role": "tool",
-                    "content": result,
-                })
+                messages.append(
+                    {
+                        "role": "tool",
+                        "content": result,
+                    }
+                )
 
             # Call LLM again with tool results
             response = self._call_ollama(messages, tools=TOOLS)
@@ -595,7 +602,9 @@ def main():
                 print("No tool calls yet.\n")
             else:
                 for entry in log:
-                    print(f"  [{entry['timestamp'][:19]}] {entry['tool']}({entry['arguments']})")
+                    print(
+                        f"  [{entry['timestamp'][:19]}] {entry['tool']}({entry['arguments']})"
+                    )
                     print(f"    → {entry['result_summary'][:100]}")
                 print()
             continue

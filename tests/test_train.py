@@ -137,7 +137,10 @@ class TestModelRegistry:
         metrics = evaluate_model(model, X, "isolation_forest")
 
         version = save_model(
-            model, scaler, feature_names, metrics,
+            model,
+            scaler,
+            feature_names,
+            metrics,
             model_name="isolation_forest",
             models_dir=tmp_models_dir,
         )
@@ -166,7 +169,9 @@ class TestAnomalyDetector:
         X, scaler, feature_names = scaled_data
         model = train_isolation_forest(X, contamination=0.01)
         metrics = evaluate_model(model, X, "isolation_forest")
-        save_model(model, scaler, feature_names, metrics, "isolation_forest", tmp_models_dir)
+        save_model(
+            model, scaler, feature_names, metrics, "isolation_forest", tmp_models_dir
+        )
 
         detector = AnomalyDetector(models_dir=tmp_models_dir)
         assert detector.model is not None
@@ -176,7 +181,9 @@ class TestAnomalyDetector:
         X, scaler, feature_names = scaled_data
         model = train_isolation_forest(X, contamination=0.01)
         metrics = evaluate_model(model, X, "isolation_forest")
-        save_model(model, scaler, feature_names, metrics, "isolation_forest", tmp_models_dir)
+        save_model(
+            model, scaler, feature_names, metrics, "isolation_forest", tmp_models_dir
+        )
 
         detector = AnomalyDetector(models_dir=tmp_models_dir)
         scored = detector.score_dataframe(sample_feature_df)
@@ -190,7 +197,9 @@ class TestAnomalyDetector:
         X, scaler, feature_names = scaled_data
         model = train_isolation_forest(X, contamination=0.01)
         metrics = evaluate_model(model, X, "isolation_forest")
-        save_model(model, scaler, feature_names, metrics, "isolation_forest", tmp_models_dir)
+        save_model(
+            model, scaler, feature_names, metrics, "isolation_forest", tmp_models_dir
+        )
 
         detector = AnomalyDetector(models_dir=tmp_models_dir)
         scored = detector.score_dataframe(sample_feature_df)
@@ -203,7 +212,9 @@ class TestAnomalyDetector:
         X, scaler, feature_names = scaled_data
         model = train_isolation_forest(X, contamination=0.01)
         metrics = evaluate_model(model, X, "isolation_forest")
-        save_model(model, scaler, feature_names, metrics, "isolation_forest", tmp_models_dir)
+        save_model(
+            model, scaler, feature_names, metrics, "isolation_forest", tmp_models_dir
+        )
 
         detector = AnomalyDetector(models_dir=tmp_models_dir)
         info = detector.model_info

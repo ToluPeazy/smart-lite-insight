@@ -39,9 +39,17 @@ class TestTemporalFeatures:
     def test_adds_expected_columns(self, sample_df):
         result = add_temporal_features(sample_df)
         expected = [
-            "hour", "day_of_week", "month", "is_weekend",
-            "time_of_use", "hour_sin", "hour_cos",
-            "dow_sin", "dow_cos", "month_sin", "month_cos",
+            "hour",
+            "day_of_week",
+            "month",
+            "is_weekend",
+            "time_of_use",
+            "hour_sin",
+            "hour_cos",
+            "dow_sin",
+            "dow_cos",
+            "month_sin",
+            "month_cos",
         ]
         for col in expected:
             assert col in result.columns, f"Missing column: {col}"
@@ -66,8 +74,11 @@ class TestTemporalFeatures:
     def test_time_of_use_categories(self, sample_df):
         result = add_temporal_features(sample_df)
         valid_categories = {
-            "off_peak", "morning_peak", "daytime",
-            "evening_peak", "late_evening",
+            "off_peak",
+            "morning_peak",
+            "daytime",
+            "evening_peak",
+            "late_evening",
         }
         actual = set(result["time_of_use"].unique())
         assert actual.issubset(valid_categories)
@@ -111,10 +122,9 @@ class TestRollingFeatures:
                 col = f"global_active_power_kw_roll_{stat}_{label}"
                 assert col in result.columns, f"Missing: {col}"
 
-    #def test_custom_windows(self, sample_df):
+    # def test_custom_windows(self, sample_df):
     #    result = add_rolling_features(sample_df, windows=[30])
     #    assert "global_active_power_kw_roll_mean_0h" in result.columns
-
 
     def test_custom_windows(self, sample_df):
         result = add_rolling_features(sample_df, windows=[30])
@@ -145,14 +155,22 @@ class TestRateOfChange:
             sample_df["global_active_power_kw"].iloc[1]
             - sample_df["global_active_power_kw"].iloc[0]
         )
-        assert result["global_active_power_kw_diff_1m"].iloc[1] == pytest.approx(expected)
+        assert result["global_active_power_kw_diff_1m"].iloc[1] == pytest.approx(
+            expected
+        )
 
 
 class TestSubmeteringRatios:
     def test_adds_ratio_columns(self, sample_df):
         result = add_submetering_ratios(sample_df)
-        expected = ["sub_total_wh", "total_wh_per_min", "metered_ratio",
-                     "sub_1_share", "sub_2_share", "sub_3_share"]
+        expected = [
+            "sub_total_wh",
+            "total_wh_per_min",
+            "metered_ratio",
+            "sub_1_share",
+            "sub_2_share",
+            "sub_3_share",
+        ]
         for col in expected:
             assert col in result.columns
 
@@ -172,11 +190,10 @@ class TestSubmeteringRatios:
 
 
 class TestBuildFeatureMatrix:
-    #def test_full_pipeline_runs(self, sample_df):
+    # def test_full_pipeline_runs(self, sample_df):
     #    result = build_feature_matrix(sample_df, drop_na=True)
     #    assert len(result) > 0
     #    assert len(result) < len(sample_df)  # Some rows dropped from warmup
-
 
     def test_full_pipeline_runs(self, sample_df):
         # Use smaller windows so 200-row sample survives dropna
@@ -185,11 +202,10 @@ class TestBuildFeatureMatrix:
         assert len(result_clean) > 0
         assert len(result_clean) < len(sample_df)
 
-    #def test_no_nans_when_drop_na(self, sample_df):
+    # def test_no_nans_when_drop_na(self, sample_df):
     #    result = build_feature_matrix(sample_df, drop_na=True)
     #    numeric = result.select_dtypes(include=[np.number])
     #    assert numeric.isna().sum().sum() == 0
-
 
     def test_no_nans_when_drop_na(self):
         # Need enough rows for the 24h window (1440 min)
