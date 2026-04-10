@@ -285,38 +285,44 @@ async def get_timeseries(
     """
     conn = get_db_connection()
 
-    if start and end:
-        query = """
-            SELECT timestamp, global_active_power_kw, global_reactive_power_kw,
-                   voltage_v, global_intensity_a,
-                   sub_metering_1_wh, sub_metering_2_wh, sub_metering_3_wh
-            FROM readings
-            WHERE site_id = ? AND timestamp BETWEEN ? AND ?
-            ORDER BY timestamp
-        """
-        df = pd.read_sql_query(
-            query,
-            conn,
-            params=(site_id, start.isoformat(), end.isoformat()),
-            parse_dates=["timestamp"],
-        )
-    else:
-        query = """
-            SELECT timestamp, global_active_power_kw, global_reactive_power_kw,
-                   voltage_v, global_intensity_a,
-                   sub_metering_1_wh, sub_metering_2_wh, sub_metering_3_wh
-            FROM readings
-            WHERE site_id = ?
-            ORDER BY timestamp DESC
-            LIMIT ?
-        """
-        df = pd.read_sql_query(
-            query,
-            conn,
-            params=(site_id, hours * 60),
-            parse_dates=["timestamp"],
-        )
-        df = df.sort_values("timestamp")
+    try:
+        if start and end:
+            query = """
+                SELECT timestamp, global_active_power_kw, global_reactive_power_kw,
+                       voltage_v, global_intensity_a,
+                       sub_metering_1_wh, sub_metering_2_wh, sub_metering_3_wh
+                FROM readings
+                WHERE site_id = ? AND timestamp BETWEEN ? AND ?
+                ORDER BY timestamp
+            """
+            df = pd.read_sql_query(
+                query,
+                conn,
+                params=(site_id, start.isoformat(), end.isoformat()),
+                parse_dates=["timestamp"],
+            )
+        else:
+            query = """
+                SELECT timestamp, global_active_power_kw, global_reactive_power_kw,
+                       voltage_v, global_intensity_a,
+                       sub_metering_1_wh, sub_metering_2_wh, sub_metering_3_wh
+                FROM readings
+                WHERE site_id = ?
+                ORDER BY timestamp DESC
+                LIMIT ?
+            """
+            df = pd.read_sql_query(
+                query,
+                conn,
+                params=(site_id, hours * 60),
+                parse_dates=["timestamp"],
+            )
+            df = df.sort_values("timestamp")
+    except Exception as e:
+        conn.close()
+        raise HTTPException(
+            status_code=503, detail=f"Database query failed: {e}"
+        ) from e
 
     conn.close()
 
@@ -381,38 +387,44 @@ async def get_anomalies(
     det = require_detector()
     conn = get_db_connection()
 
-    if start and end:
-        query = """
-            SELECT timestamp, global_active_power_kw, global_reactive_power_kw,
-                   voltage_v, global_intensity_a,
-                   sub_metering_1_wh, sub_metering_2_wh, sub_metering_3_wh
-            FROM readings
-            WHERE site_id = ? AND timestamp BETWEEN ? AND ?
-            ORDER BY timestamp
-        """
-        df = pd.read_sql_query(
-            query,
-            conn,
-            params=(site_id, start.isoformat(), end.isoformat()),
-            parse_dates=["timestamp"],
-        )
-    else:
-        query = """
-            SELECT timestamp, global_active_power_kw, global_reactive_power_kw,
-                   voltage_v, global_intensity_a,
-                   sub_metering_1_wh, sub_metering_2_wh, sub_metering_3_wh
-            FROM readings
-            WHERE site_id = ?
-            ORDER BY timestamp DESC
-            LIMIT ?
-        """
-        df = pd.read_sql_query(
-            query,
-            conn,
-            params=(site_id, hours * 60),
-            parse_dates=["timestamp"],
-        )
-        df = df.sort_values("timestamp")
+    try:
+        if start and end:
+            query = """
+                SELECT timestamp, global_active_power_kw, global_reactive_power_kw,
+                       voltage_v, global_intensity_a,
+                       sub_metering_1_wh, sub_metering_2_wh, sub_metering_3_wh
+                FROM readings
+                WHERE site_id = ? AND timestamp BETWEEN ? AND ?
+                ORDER BY timestamp
+            """
+            df = pd.read_sql_query(
+                query,
+                conn,
+                params=(site_id, start.isoformat(), end.isoformat()),
+                parse_dates=["timestamp"],
+            )
+        else:
+            query = """
+                SELECT timestamp, global_active_power_kw, global_reactive_power_kw,
+                       voltage_v, global_intensity_a,
+                       sub_metering_1_wh, sub_metering_2_wh, sub_metering_3_wh
+                FROM readings
+                WHERE site_id = ?
+                ORDER BY timestamp DESC
+                LIMIT ?
+            """
+            df = pd.read_sql_query(
+                query,
+                conn,
+                params=(site_id, hours * 60),
+                parse_dates=["timestamp"],
+            )
+            df = df.sort_values("timestamp")
+    except Exception as e:
+        conn.close()
+        raise HTTPException(
+            status_code=503, detail=f"Database query failed: {e}"
+        ) from e
 
     conn.close()
 
