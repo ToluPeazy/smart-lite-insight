@@ -44,6 +44,13 @@ models/*.pkl
 !models/.gitkeep
 !models/registry.json
 
+# ── Notebooks (keep structure, ignore checkpoints) ──
+notebooks/*.ipynb
+!notebooks/.gitkeep
+
 # ── Logs ──
 logs/
 *.log
+
+# ── Ruff cache ──
+.ruff_cache/
