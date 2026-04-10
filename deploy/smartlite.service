@@ -1,0 +1,43 @@
+[Unit]
+Description=Smart-Lite Insight — Edge AI Energy Monitor
+Documentation=https://github.com/tolupeazy/smart-lite-insight
+After=network-online.target docker.service
+Wants=network-online.target
+Requires=docker.service
+
+[Service]
+Type=oneshot
+RemainAfterExit=yes
+
+# ── Project location ──
+# Edit INSTALL_DIR to match where you cloned the repo on the Pi
+Environment=INSTALL_DIR=/opt/smart-lite-insight
+
+WorkingDirectory=%E/INSTALL_DIR
+# Fallback if the env var isn't set
+ExecStartPre=/bin/bash -c 'test -f ${INSTALL_DIR:-/opt/smart-lite-insight}/.env || (echo "Missing .env — copy .env.example first" && exit 1)'
+
+ExecStart=/usr/bin/docker compose \
+    --project-directory ${INSTALL_DIR:-/opt/smart-lite-insight} \
+    up --detach --remove-orphans
+
+ExecStop=/usr/bin/docker compose \
+    --project-directory ${INSTALL_DIR:-/opt/smart-lite-insight} \
+    down
+
+ExecReload=/usr/bin/docker compose \
+    --project-directory ${INSTALL_DIR:-/opt/smart-lite-insight} \
+    pull && \
+    /usr/bin/docker compose \
+    --project-directory ${INSTALL_DIR:-/opt/smart-lite-insight} \
+    up --detach --remove-orphans
+
+Restart=on-failure
+RestartSec=10s
+
+# Allow up to 3 minutes for containers to start
+TimeoutStartSec=180
+TimeoutStopSec=60
+
+[Install]
+WantedBy=multi-user.target

@@ -1,0 +1,94 @@
+name: CI
+
+on:
+  push:
+    branches: ["main", "claude/**", "feature/**"]
+  pull_request:
+    branches: ["main"]
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  # ── 1. Lint ─────────────────────────────────────────────────────────────────
+  lint:
+    name: Lint (black + ruff)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+          cache: pip
+
+      - name: Install linters
+        run: pip install black>=24.4 ruff>=0.4
+
+      - name: black (format check)
+        run: black --check --diff src/ dashboard/ seed/ tests/
+
+      - name: ruff (lint)
+        run: ruff check src/ dashboard/ seed/ tests/
+
+  # ── 2. Test ─────────────────────────────────────────────────────────────────
+  test:
+    name: Test (Python ${{ matrix.python-version }})
+    runs-on: ubuntu-latest
+    needs: lint
+    strategy:
+      fail-fast: false
+      matrix:
+        python-version: ["3.11", "3.12"]
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: ${{ matrix.python-version }}
+          cache: pip
+
+      - name: Install dependencies
+        run: pip install -e ".[dev]"
+
+      - name: Run tests with coverage
+        run: pytest -v --tb=short --cov=src --cov=seed --cov-report=term-missing --cov-fail-under=70
+
+      - name: Upload coverage report
+        if: matrix.python-version == '3.11'
+        uses: actions/upload-artifact@v4
+        with:
+          name: coverage-report
+          path: .coverage
+          retention-days: 7
+
+  # ── 3. Docker build (ARM64 for Raspberry Pi) ─────────────────────────────────
+  docker-build:
+    name: Docker build (linux/arm64)
+    runs-on: ubuntu-latest
+    needs: test
+    # Only build on pushes to main (not every PR to save build minutes)
+    if: github.event_name == 'push' && github.ref == 'refs/heads/main'
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up QEMU (ARM emulation)
+        uses: docker/setup-qemu-action@v3
+        with:
+          platforms: arm64
+
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v3
+
+      - name: Build image for linux/arm64
+        uses: docker/build-push-action@v5
+        with:
+          context: .
+          platforms: linux/arm64
+          push: false   # set to true + add registry login to publish
+          tags: smart-lite-insight:${{ github.sha }}
+          cache-from: type=gha
+          cache-to: type=gha,mode=max
