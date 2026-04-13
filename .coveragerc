@@ -1,0 +1,6 @@
+[run]
+omit =
+    src/agent.py
+
+[report]
+fail_under = 70
