@@ -99,9 +99,7 @@ class TestBulkLoad:
         )
 
         conn = sqlite3.connect(db)
-        row = conn.execute(
-            "SELECT site_id, device_id FROM readings LIMIT 1"
-        ).fetchone()
+        row = conn.execute("SELECT site_id, device_id FROM readings LIMIT 1").fetchone()
         conn.close()
         assert row == ("test-site", "test-device")
 
