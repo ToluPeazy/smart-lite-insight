@@ -1,7 +1,6 @@
 """Additional tests for src/serve.py — covering previously untested paths."""
 
 import sqlite3
-import tempfile
 from datetime import datetime, timedelta
 from pathlib import Path
 from unittest.mock import MagicMock, patch
@@ -10,7 +9,7 @@ import pandas as pd
 import pytest
 from fastapi.testclient import TestClient
 
-from src.serve import app, readings_to_dataframe, get_db_connection, ReadingInput
+from src.serve import ReadingInput, app, get_db_connection, readings_to_dataframe
 
 client = TestClient(app)
 

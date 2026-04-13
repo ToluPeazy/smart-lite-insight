@@ -1,14 +1,11 @@
 """Tests for bulk_load and live_ingest in src/ingest.py."""
 
 import sqlite3
-import tempfile
 from pathlib import Path
 
 import pytest
 
 from src.ingest import (
-    DEFAULT_DEVICE_ID,
-    DEFAULT_SITE_ID,
     bulk_load,
     live_ingest,
 )
