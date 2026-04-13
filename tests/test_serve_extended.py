@@ -76,8 +76,9 @@ class TestScoreEndpointWithDetector:
         """Score endpoint returns 422 when feature matrix is empty post-engineering."""
         mock_detector = MagicMock()
 
-        with patch("src.serve.detector", mock_detector), patch(
-            "src.serve.build_feature_matrix", return_value=pd.DataFrame()
+        with (
+            patch("src.serve.detector", mock_detector),
+            patch("src.serve.build_feature_matrix", return_value=pd.DataFrame()),
         ):
             response = client.post(
                 "/anomaly/score", json={"readings": make_readings(5)}
@@ -87,8 +88,9 @@ class TestScoreEndpointWithDetector:
     def test_returns_422_when_feature_engineering_raises(self):
         mock_detector = MagicMock()
 
-        with patch("src.serve.detector", mock_detector), patch(
-            "src.serve.build_feature_matrix", side_effect=ValueError("bad data")
+        with (
+            patch("src.serve.detector", mock_detector),
+            patch("src.serve.build_feature_matrix", side_effect=ValueError("bad data")),
         ):
             response = client.post(
                 "/anomaly/score", json={"readings": make_readings(5)}
@@ -114,8 +116,9 @@ class TestScoreEndpointWithDetector:
 
         mock_detector.score_dataframe.return_value = scored_df
 
-        with patch("src.serve.detector", mock_detector), patch(
-            "src.serve.build_feature_matrix", return_value=feature_df
+        with (
+            patch("src.serve.detector", mock_detector),
+            patch("src.serve.build_feature_matrix", return_value=feature_df),
         ):
             response = client.post(
                 "/anomaly/score", json={"readings": make_readings(5)}
@@ -167,8 +170,10 @@ class TestTimeSeriesWithStartEnd:
     def test_returns_data_with_start_end(self, tmp_path):
         db_path = self._make_db(tmp_path)
 
-        with patch("src.serve.get_db_connection",
-                   return_value=sqlite3.connect(db_path, check_same_thread=False)):
+        with patch(
+            "src.serve.get_db_connection",
+            return_value=sqlite3.connect(db_path, check_same_thread=False),
+        ):
             response = client.get(
                 "/timeseries",
                 params={
@@ -254,9 +259,12 @@ class TestAnomaliesEndpointWithData:
         conn.close()
 
         mock_detector = MagicMock()
-        with patch("src.serve.detector", mock_detector), patch(
-            "src.serve.get_db_connection",
-            return_value=sqlite3.connect(db_path, check_same_thread=False)
+        with (
+            patch("src.serve.detector", mock_detector),
+            patch(
+                "src.serve.get_db_connection",
+                return_value=sqlite3.connect(db_path, check_same_thread=False),
+            ),
         ):
             response = client.get("/anomalies", params={"hours": 24})
 
@@ -284,9 +292,11 @@ class TestAnomaliesEndpointWithData:
             {"global_active_power_kw": [4.2]}, index=pd.DatetimeIndex([ts])
         )
 
-        with patch("src.serve.detector", mock_detector), patch(
-            "src.serve.DEFAULT_DB_PATH", db_path
-        ), patch("src.serve.build_feature_matrix", return_value=feature_df):
+        with (
+            patch("src.serve.detector", mock_detector),
+            patch("src.serve.DEFAULT_DB_PATH", db_path),
+            patch("src.serve.build_feature_matrix", return_value=feature_df),
+        ):
             response = client.get("/anomalies", params={"hours": 24})
 
         assert response.status_code == 200
@@ -299,8 +309,12 @@ class TestAnomaliesEndpointWithData:
         ts = pd.Timestamp("2024-01-15 10:00:00")
 
         scored_df = pd.DataFrame(
-            {"anomaly_score": [-0.3], "is_anomaly": [True],
-             "global_active_power_kw": [4.2], "voltage_v": [234.0]},
+            {
+                "anomaly_score": [-0.3],
+                "is_anomaly": [True],
+                "global_active_power_kw": [4.2],
+                "voltage_v": [234.0],
+            },
             index=pd.DatetimeIndex([ts]),
         )
 
@@ -309,14 +323,17 @@ class TestAnomaliesEndpointWithData:
         mock_detector.get_anomalies.return_value = scored_df
 
         feature_df = pd.DataFrame(
-            {"global_active_power_kw": [4.2]},
-            index=pd.DatetimeIndex([ts])
+            {"global_active_power_kw": [4.2]}, index=pd.DatetimeIndex([ts])
         )
 
-        with patch("src.serve.detector", mock_detector), patch(
-            "src.serve.get_db_connection",
-            return_value=sqlite3.connect(db_path, check_same_thread=False)
-        ), patch("src.serve.build_feature_matrix", return_value=feature_df):
+        with (
+            patch("src.serve.detector", mock_detector),
+            patch(
+                "src.serve.get_db_connection",
+                return_value=sqlite3.connect(db_path, check_same_thread=False),
+            ),
+            patch("src.serve.build_feature_matrix", return_value=feature_df),
+        ):
             response = client.get(
                 "/anomalies",
                 params={"start": "2024-01-15T10:00:00", "end": "2024-01-15T10:10:00"},
