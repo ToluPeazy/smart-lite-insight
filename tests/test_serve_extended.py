@@ -41,9 +41,11 @@ class TestGetDbConnection:
     def test_raises_503_on_bad_path(self):
         from fastapi import HTTPException
 
-        with pytest.raises(HTTPException) as exc:
-            with patch("src.serve.sqlite3.connect", side_effect=sqlite3.Error("fail")):
-                get_db_connection("/nonexistent/path/db.db")
+        with (
+            pytest.raises(HTTPException) as exc,
+            patch("src.serve.sqlite3.connect", side_effect=sqlite3.Error("fail")),
+        ):
+            get_db_connection("/nonexistent/path/db.db")
         assert exc.value.status_code == 503
 
 
