@@ -17,11 +17,11 @@ from src.train import (
     train_isolation_forest,
 )
 
-
-#@pytest.fixture
-#def client():
+# @pytest.fixture
+# def client():
 #    """Create a test client for the FastAPI app."""
 #    return TestClient(app)
+
 
 @pytest.fixture
 def client():
