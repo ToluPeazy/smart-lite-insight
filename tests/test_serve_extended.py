@@ -1,5 +1,7 @@
 """Additional tests for src/serve.py — covering previously untested paths."""
 
+
+import os
 import sqlite3
 from datetime import datetime, timedelta
 from pathlib import Path
@@ -11,7 +13,11 @@ from fastapi.testclient import TestClient
 
 from src.serve import ReadingInput, app, get_db_connection, readings_to_dataframe
 
-client = TestClient(app)
+#client = TestClient(app)
+
+os.environ["SMARTLITE_API_KEY"] = "test-key-for-ci"
+
+client = TestClient(app, headers={"X-API-Key": "test-key-for-ci"})
 
 # ── Fixtures ──────────────────────────────────────────────────────────────────
 

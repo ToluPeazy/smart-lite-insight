@@ -11,14 +11,22 @@ Usage:
     uvicorn src.serve:app --host 0.0.0.0 --port 8000 --reload
 """
 
+import os
+import secrets
 import sqlite3
 from contextlib import asynccontextmanager
 from datetime import datetime
 
 import pandas as pd
-from fastapi import FastAPI, HTTPException, Query
+from fastapi import Depends, FastAPI, HTTPException, Query, Request, Security, status
+from fastapi.middleware.cors import CORSMiddleware
+from fastapi.responses import JSONResponse
+from fastapi.security import APIKeyHeader
 from loguru import logger
 from pydantic import BaseModel, Field
+from slowapi import Limiter, _rate_limit_exceeded_handler
+from slowapi.errors import RateLimitExceeded
+from slowapi.util import get_remote_address
 
 from src.detect import AnomalyDetector
 from src.features import build_feature_matrix
@@ -48,6 +56,57 @@ app = FastAPI(
     version="0.1.0",
     lifespan=lifespan,
 )
+
+app.add_middleware(
+    CORSMiddleware,
+    allow_origins=[
+        "https://your-cloudflare-dashboard-url.trycloudflare.com",
+        "http://localhost:8501",
+    ],
+    allow_methods=["GET", "POST"],
+    allow_headers=["X-API-Key"],
+)
+
+# Rate limiter: 30 requests per minute per IP for scoring endpoint
+
+limiter = Limiter(key_func=get_remote_address)
+app.state.limiter = limiter
+app.add_exception_handler(RateLimitExceeded, _rate_limit_exceeded_handler)
+
+# ── Custom Exception Handlers ──
+
+
+@app.exception_handler(FileNotFoundError)
+async def file_not_found_handler(request: Request, exc: FileNotFoundError):
+    return JSONResponse(
+        status_code=503, content={"detail": "Service temporarily unavailable"}
+    )
+
+
+@app.exception_handler(Exception)
+async def generic_handler(request: Request, exc: Exception):
+    logger.error(f"Unhandled exception: {exc}")  # log internally
+    return JSONResponse(status_code=500, content={"detail": "Internal server error"})
+
+
+# API_KEY = os.getenv("SMARTLITE_API_KEY")
+api_key_header = APIKeyHeader(name="X-API-Key", auto_error=False)
+
+# async def verify_api_key(key: str = Security(api_key_header)):
+#    if not API_KEY or not secrets.compare_digest(key or "", API_KEY):
+#        raise HTTPException(
+#            status_code=status.HTTP_403_FORBIDDEN,
+#            detail="Invalid or missing API key",
+#        )
+
+
+async def verify_api_key(key: str = Security(api_key_header)):
+    api_key = os.getenv("SMARTLITE_API_KEY")
+    if not api_key or not secrets.compare_digest(key or "", api_key):
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="Invalid or missing API key",
+        )
 
 
 # ── Request / Response Models ──
@@ -204,7 +263,12 @@ async def health_check():
     )
 
 
-@app.get("/model/info", response_model=ModelInfoResponse, tags=["Model"])
+@app.get(
+    "/model/info",
+    dependencies=[Depends(verify_api_key)],
+    response_model=ModelInfoResponse,
+    tags=["Model"],
+)
 async def model_info():
     """Get metadata about the currently loaded model."""
     det = require_detector()
@@ -213,9 +277,13 @@ async def model_info():
 
 
 @app.post(
-    "/anomaly/score", response_model=BatchScoreResponse, tags=["Anomaly Detection"]
+    "/anomaly/score",
+    dependencies=[Depends(verify_api_key)],
+    response_model=BatchScoreResponse,
+    tags=["Anomaly Detection"],
 )
-async def score_readings(request: BatchScoreRequest):
+@limiter.limit("30/minute")
+async def score_readings(request: Request, body: BatchScoreRequest):
     """Score a batch of readings for anomalies.
 
     Requires enough context for feature engineering (ideally 24h+ of
@@ -224,7 +292,7 @@ async def score_readings(request: BatchScoreRequest):
     """
     det = require_detector()
 
-    df = readings_to_dataframe(request.readings)
+    df = readings_to_dataframe(body.readings)
 
     # Build features
     try:
@@ -267,7 +335,12 @@ async def score_readings(request: BatchScoreRequest):
     )
 
 
-@app.get("/timeseries", response_model=TimeSeriesResponse, tags=["Time Series"])
+@app.get(
+    "/timeseries",
+    dependencies=[Depends(verify_api_key)],
+    response_model=TimeSeriesResponse,
+    tags=["Time Series"],
+)
 async def get_timeseries(
     start: datetime = Query(None, description="Start timestamp (ISO 8601)"),
     end: datetime = Query(None, description="End timestamp (ISO 8601)"),
@@ -372,7 +445,9 @@ async def get_timeseries(
     )
 
 
-@app.get("/anomalies", tags=["Anomaly Detection"])
+@app.get(
+    "/anomalies", dependencies=[Depends(verify_api_key)], tags=["Anomaly Detection"]
+)
 async def get_anomalies(
     start: datetime = Query(None, description="Start timestamp"),
     end: datetime = Query(None, description="End timestamp"),

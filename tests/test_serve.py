@@ -18,10 +18,16 @@ from src.train import (
 )
 
 
+#@pytest.fixture
+#def client():
+#    """Create a test client for the FastAPI app."""
+#    return TestClient(app)
+
 @pytest.fixture
 def client():
     """Create a test client for the FastAPI app."""
-    return TestClient(app)
+    os.environ["SMARTLITE_API_KEY"] = "test-key-for-ci"
+    return TestClient(app, headers={"X-API-Key": "test-key-for-ci"})
 
 
 @pytest.fixture
