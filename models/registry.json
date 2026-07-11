@@ -5,6 +5,7 @@
       "model_name": "isolation_forest",
       "model_file": "anomaly_isolation_forest_v1.0.joblib",
       "scaler_file": "scaler_v1.0.joblib",
+      "deployed": true,
       "feature_names": [
         "global_active_power_kw",
         "global_reactive_power_kw",

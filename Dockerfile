@@ -36,5 +36,9 @@ RUN mkdir -p data/raw data/processed
 # Install the project in editable mode
 RUN pip install --no-cache-dir -e .
 
+# Create a non-root user to run the app
+RUN addgroup --system appgroup && adduser --system --ingroup appgroup appuser
+USER appuser
+
 # Default: run the API
 CMD ["uvicorn", "src.serve:app", "--host", "0.0.0.0", "--port", "8000"]

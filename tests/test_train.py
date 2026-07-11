@@ -222,3 +222,30 @@ class TestAnomalyDetector:
         assert info["model_name"] == "isolation_forest"
         assert info["version"] == "1.0"
         assert info["n_features"] == len(feature_names)
+
+    def test_prefers_deployed_flag_over_latest_appended(
+        self, scaled_data, tmp_models_dir, sample_feature_df
+    ):
+        """A model marked deployed=true wins even if a newer version was
+        appended afterwards -- this is the fix for the bug where the API
+        silently served the last-trained model instead of the intended one.
+        """
+        X, scaler, feature_names = scaled_data
+        model = train_isolation_forest(X, contamination=0.01)
+        metrics = evaluate_model(model, X, "isolation_forest")
+        save_model(
+            model, scaler, feature_names, metrics, "isolation_forest", tmp_models_dir
+        )
+        save_model(model, scaler, feature_names, metrics, "lof", tmp_models_dir)
+
+        registry_path = os.path.join(tmp_models_dir, "registry.json")
+        with open(registry_path) as f:
+            registry = json.load(f)
+        assert registry["latest_version"] == "2.0"  # the newer, non-deployed entry
+        registry["models"][0]["deployed"] = True
+        with open(registry_path, "w") as f:
+            json.dump(registry, f)
+
+        detector = AnomalyDetector(models_dir=tmp_models_dir)
+
+        assert detector.metadata["version"] == "1.0"
