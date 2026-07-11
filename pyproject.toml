@@ -45,6 +45,7 @@ dev = [
     "ipykernel>=6.29",
     "notebook>=7.1",
     "pre-commit>=3.7",
+    "jsonschema>=4.20",
 ]
 
 # ── Build System ──
