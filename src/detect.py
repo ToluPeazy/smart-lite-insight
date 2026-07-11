@@ -48,7 +48,13 @@ class AnomalyDetector:
         )
 
     def _load_model(self, version: str | None = None) -> tuple:
-        """Load model, scaler, and metadata from registry."""
+        """Load model, scaler, and metadata from registry.
+
+        Model selection for version=None: prefer the entry explicitly marked
+        "deployed": true so the choice survives future retraining and array
+        reordering. Falls back to latest_version, then the last entry, for
+        registries written before the deployed flag existed.
+        """
         registry_path = self.models_dir / "registry.json"
 
         if not registry_path.is_file():
@@ -60,13 +66,21 @@ class AnomalyDetector:
         if not registry.get("models"):
             raise FileNotFoundError("No models in registry")
 
-        if version is None:
-            entry = registry["models"][-1]
-        else:
+        if version is not None:
             matches = [m for m in registry["models"] if m["version"] == version]
             if not matches:
                 raise ValueError(f"Version {version} not found in registry")
             entry = matches[-1]
+        else:
+            deployed = [m for m in registry["models"] if m.get("deployed")]
+            if deployed:
+                entry = deployed[-1]
+            else:
+                latest_version = registry.get("latest_version")
+                matches = [
+                    m for m in registry["models"] if m["version"] == latest_version
+                ]
+                entry = matches[-1] if matches else registry["models"][-1]
 
         model = joblib.load(self.models_dir / entry["model_file"])
         scaler = joblib.load(self.models_dir / entry["scaler_file"])

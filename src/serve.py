@@ -89,15 +89,7 @@ async def generic_handler(request: Request, exc: Exception):
     return JSONResponse(status_code=500, content={"detail": "Internal server error"})
 
 
-# API_KEY = os.getenv("SMARTLITE_API_KEY")
 api_key_header = APIKeyHeader(name="X-API-Key", auto_error=False)
-
-# async def verify_api_key(key: str = Security(api_key_header)):
-#    if not API_KEY or not secrets.compare_digest(key or "", API_KEY):
-#        raise HTTPException(
-#            status_code=status.HTTP_403_FORBIDDEN,
-#            detail="Invalid or missing API key",
-#        )
 
 
 async def verify_api_key(key: str = Security(api_key_header)):
@@ -170,6 +162,7 @@ class BatchScoreResponse(BaseModel):
     total: int
     anomaly_count: int
     anomaly_rate: float
+    model_version: str
 
 
 class TimeSeriesPoint(BaseModel):
@@ -332,6 +325,7 @@ async def score_readings(request: Request, body: BatchScoreRequest):
         total=len(results),
         anomaly_count=anomaly_count,
         anomaly_rate=round(anomaly_count / len(results), 4) if results else 0,
+        model_version=det.metadata["version"],
     )
 
 

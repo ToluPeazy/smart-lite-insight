@@ -160,9 +160,8 @@ smart-lite-insight/
 │   ├── test_train.py
 │   └── test_serve.py
 ├── docs/
-│   ├── schemas/telemetry_v1.json
-│   ├── PROJECT_PLAN.md
-│   └── SETUP.md
+│   └── schemas/telemetry_v1.json
+├── HANDOFF.md
 ├── Dockerfile
 ├── docker-compose.yml
 ├── Makefile

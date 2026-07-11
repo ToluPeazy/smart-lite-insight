@@ -105,6 +105,7 @@ class TestScoreEndpointWithDetector:
 
     def test_returns_scored_results(self):
         mock_detector = MagicMock()
+        mock_detector.metadata = {"version": "1.0"}
         ts = pd.Timestamp("2024-01-15 19:00:00")
         scored_df = pd.DataFrame(
             {
@@ -135,6 +136,7 @@ class TestScoreEndpointWithDetector:
         assert data["total"] == 1
         assert "anomaly_count" in data
         assert "anomaly_rate" in data
+        assert data["model_version"] == "1.0"
 
 
 # ── /timeseries — with start/end params ──────────────────────────────────────
