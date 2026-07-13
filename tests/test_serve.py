@@ -89,9 +89,9 @@ class TestHealthEndpoint:
         response = client.get("/health")
         assert response.status_code == 200
         data = response.json()
-        assert "status" in data
-        assert "model_loaded" in data
-        assert "database_accessible" in data
+        assert data == {"status": "ok"}
+        assert "model_loaded" not in data
+        assert "database_accessible" not in data
 
 
 class TestModelInfoEndpoint:

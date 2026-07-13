@@ -407,15 +407,22 @@ def tool_retrain_model(confirm: bool = False) -> dict:
         return {"error": str(e)}
 
 
-# Tool dispatch
+# Tool dispatch — retrain_model excluded; requires human confirmation flow
 TOOL_DISPATCH = {
     "get_timeseries": tool_get_timeseries,
     "get_anomalies": tool_get_anomalies,
     "get_statistics": tool_get_statistics,
     "get_model_info": tool_get_model_info,
     "get_date_range": tool_get_date_range,
-    "retrain_model": tool_retrain_model,
 }
+
+# Build a map of tool name → set of allowed parameter names from TOOLS schema
+_TOOL_PARAMS: dict[str, set[str]] = {}
+for _tool_def in TOOLS:
+    _fn = _tool_def["function"]
+    _TOOL_PARAMS[_fn["name"]] = set(
+        _fn.get("parameters", {}).get("properties", {}).keys()
+    )
 
 
 # ── Agent ──
@@ -433,6 +440,7 @@ class Agent:
         self.model = model
         self.conversation: list[dict] = []
         self.tool_log: list[dict] = []
+        self._retrain_pending: bool = False
 
         # Verify Ollama is reachable
         try:
@@ -479,14 +487,31 @@ class Agent:
         """Execute a tool and return the result as a string."""
         logger.info(f"Tool call: {tool_name}({arguments})")
 
-        func = TOOL_DISPATCH.get(tool_name)
-        if func is None:
-            result = {"error": f"Unknown tool: {tool_name}"}
+        # Handle retrain_model via the confirmation flow
+        if tool_name == "retrain_model":
+            self._retrain_pending = True
+            result = {
+                "status": "pending_confirmation",
+                "message": "Retraining requires human confirmation. "
+                "Please type 'yes' to confirm.",
+            }
         else:
-            try:
-                result = func(**arguments)
-            except Exception as e:
-                result = {"error": f"Tool execution failed: {e}"}
+            func = TOOL_DISPATCH.get(tool_name)
+            if func is None:
+                result = {"error": f"Unknown tool: {tool_name}"}
+            else:
+                # Filter arguments to only schema-defined keys
+                allowed = _TOOL_PARAMS.get(tool_name, set())
+                extra_keys = set(arguments.keys()) - allowed
+                if extra_keys:
+                    logger.warning(
+                        f"Dropped unexpected arguments for {tool_name}: {extra_keys}"
+                    )
+                    arguments = {k: v for k, v in arguments.items() if k in allowed}
+                try:
+                    result = func(**arguments)
+                except Exception as e:
+                    result = {"error": f"Tool execution failed: {e}"}
 
         # Log the tool call
         self.tool_log.append(
@@ -502,6 +527,21 @@ class Agent:
 
     def chat(self, user_message: str) -> str:
         """Send a message and get a response, handling tool calls."""
+        # Handle pending retrain confirmation
+        if self._retrain_pending:
+            self._retrain_pending = False
+            if user_message.strip().lower() in ("yes", "y", "confirm"):
+                result = tool_retrain_model(confirm=True)
+                reply = json.dumps(result, indent=2)
+                self.conversation.append({"role": "user", "content": user_message})
+                self.conversation.append({"role": "assistant", "content": reply})
+                return reply
+            else:
+                reply = "Retraining cancelled."
+                self.conversation.append({"role": "user", "content": user_message})
+                self.conversation.append({"role": "assistant", "content": reply})
+                return reply
+
         # Build messages with system prompt
         messages = [{"role": "system", "content": SYSTEM_PROMPT}]
         messages.extend(self.conversation)
