@@ -16,6 +16,7 @@ Usage:
 """
 
 import argparse
+import hashlib
 import json
 import sqlite3
 from datetime import datetime
@@ -293,6 +294,14 @@ def save_model(
     joblib.dump(model, models_path / model_filename)
     joblib.dump(scaler, models_path / scaler_filename)
 
+    # Compute SHA-256 hashes for integrity verification
+    model_hash = hashlib.sha256(
+        (models_path / model_filename).read_bytes()
+    ).hexdigest()
+    scaler_hash = hashlib.sha256(
+        (models_path / scaler_filename).read_bytes()
+    ).hexdigest()
+
     # Update registry
     registry_path = models_path / "registry.json"
     if registry_path.is_file():
@@ -306,6 +315,8 @@ def save_model(
         "model_name": model_name,
         "model_file": model_filename,
         "scaler_file": scaler_filename,
+        "model_hash": model_hash,
+        "scaler_hash": scaler_hash,
         "feature_names": feature_names,
         "training_date": datetime.now().isoformat(),
         "n_training_samples": metrics["n_total"],
