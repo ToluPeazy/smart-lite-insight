@@ -32,6 +32,8 @@ from src.detect import AnomalyDetector
 from src.features import build_feature_matrix
 from src.train import DEFAULT_DB_PATH
 
+ALLOWED_RESAMPLE_INTERVALS = {"1min", "5min", "15min", "1h", "1D"}
+
 # ── Global state ──
 detector: AnomalyDetector | None = None
 
@@ -57,12 +59,14 @@ app = FastAPI(
     lifespan=lifespan,
 )
 
+_cors_origins = ["http://localhost:8501"]
+_extra = os.getenv("SMARTLITE_CORS_ORIGINS", "")
+if _extra:
+    _cors_origins.extend(o.strip() for o in _extra.split(",") if o.strip())
+
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=[
-        "https://your-cloudflare-dashboard-url.trycloudflare.com",
-        "http://localhost:8501",
-    ],
+    allow_origins=_cors_origins,
     allow_methods=["GET", "POST"],
     allow_headers=["X-API-Key"],
 )
@@ -152,7 +156,7 @@ class AnomalyResult(BaseModel):
 class BatchScoreRequest(BaseModel):
     """Batch of readings for scoring."""
 
-    readings: list[ReadingInput] = Field(..., min_length=1, max_length=10000)
+    readings: list[ReadingInput] = Field(..., min_length=1, max_length=2000)
 
 
 class BatchScoreResponse(BaseModel):
@@ -199,6 +203,12 @@ class HealthResponse(BaseModel):
     """Health check response."""
 
     status: str
+
+
+class HealthDetailResponse(BaseModel):
+    """Detailed health check response (auth-protected)."""
+
+    status: str
     model_loaded: bool
     database_accessible: bool
 
@@ -212,7 +222,8 @@ def get_db_connection(db_path: str = DEFAULT_DB_PATH) -> sqlite3.Connection:
         conn = sqlite3.connect(db_path)
         return conn
     except sqlite3.Error as e:
-        raise HTTPException(status_code=503, detail=f"Database unavailable: {e}") from e
+        logger.error(f"Database connection failed: {e}")
+        raise HTTPException(status_code=503, detail="Database unavailable") from e
 
 
 def require_detector() -> AnomalyDetector:
@@ -239,7 +250,18 @@ def readings_to_dataframe(readings: list[ReadingInput]) -> pd.DataFrame:
 
 @app.get("/health", response_model=HealthResponse, tags=["System"])
 async def health_check():
-    """Check API health, model status, and database connectivity."""
+    """Public health check — returns minimal status only."""
+    return HealthResponse(status="ok")
+
+
+@app.get(
+    "/health/details",
+    dependencies=[Depends(verify_api_key)],
+    response_model=HealthDetailResponse,
+    tags=["System"],
+)
+async def health_details():
+    """Detailed health check (auth-protected)."""
     db_ok = False
     try:
         conn = sqlite3.connect(DEFAULT_DB_PATH)
@@ -249,7 +271,7 @@ async def health_check():
     except Exception:
         pass
 
-    return HealthResponse(
+    return HealthDetailResponse(
         status="healthy" if detector and db_ok else "degraded",
         model_loaded=detector is not None,
         database_accessible=db_ok,
@@ -291,10 +313,11 @@ async def score_readings(request: Request, body: BatchScoreRequest):
     try:
         df_features = build_feature_matrix(df, drop_na=True)
     except Exception as e:
+        logger.error(f"Feature engineering failed: {e}")
         raise HTTPException(
             status_code=422,
-            detail=f"Feature engineering failed: {e}. "
-            f"Ensure readings are sequential with 1-minute intervals.",
+            detail="Feature engineering failed. "
+            "Ensure readings are sequential with 1-minute intervals.",
         ) from e
 
     if df_features.empty:
@@ -387,8 +410,9 @@ async def get_timeseries(
             df = df.sort_values("timestamp")
     except Exception as e:
         conn.close()
+        logger.error(f"Database query failed: {e}")
         raise HTTPException(
-            status_code=503, detail=f"Database query failed: {e}"
+            status_code=503, detail="Database query failed"
         ) from e
 
     conn.close()
@@ -402,6 +426,11 @@ async def get_timeseries(
 
     # Optional resampling
     if resample:
+        if resample not in ALLOWED_RESAMPLE_INTERVALS:
+            raise HTTPException(
+                status_code=422,
+                detail=f"Invalid resample interval. Allowed: {sorted(ALLOWED_RESAMPLE_INTERVALS)}",
+            )
         df = df.resample(resample).mean().dropna()
 
     # Optional anomaly scoring
@@ -491,8 +520,9 @@ async def get_anomalies(
             df = df.sort_values("timestamp")
     except Exception as e:
         conn.close()
+        logger.error(f"Database query failed: {e}")
         raise HTTPException(
-            status_code=503, detail=f"Database query failed: {e}"
+            status_code=503, detail="Database query failed"
         ) from e
 
     conn.close()
@@ -506,7 +536,8 @@ async def get_anomalies(
         df_features = build_feature_matrix(df, drop_na=True)
         scored = det.score_dataframe(df_features)
     except Exception as e:
-        raise HTTPException(status_code=422, detail=f"Scoring failed: {e}") from e
+        logger.error(f"Scoring failed: {e}")
+        raise HTTPException(status_code=422, detail="Scoring failed") from e
 
     anomalies = det.get_anomalies(scored, top_n=top_n)
 

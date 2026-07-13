@@ -10,6 +10,7 @@ Usage:
     results = detector.score_dataframe(df_features)
 """
 
+import hashlib
 import json
 from pathlib import Path
 
@@ -20,6 +21,10 @@ from loguru import logger
 
 from src.features import build_feature_matrix
 from src.train import DEFAULT_MODELS_DIR
+
+
+class SecurityError(Exception):
+    """Raised when a file integrity check fails."""
 
 
 class AnomalyDetector:
@@ -82,8 +87,25 @@ class AnomalyDetector:
                 ]
                 entry = matches[-1] if matches else registry["models"][-1]
 
-        model = joblib.load(self.models_dir / entry["model_file"])
-        scaler = joblib.load(self.models_dir / entry["scaler_file"])
+        model_path = self.models_dir / entry["model_file"]
+        scaler_path = self.models_dir / entry["scaler_file"]
+
+        # Verify file integrity before deserializing
+        if "model_hash" in entry:
+            actual = hashlib.sha256(model_path.read_bytes()).hexdigest()
+            if actual != entry["model_hash"]:
+                raise SecurityError(
+                    f"Model file integrity check failed for {entry['model_file']}"
+                )
+        if "scaler_hash" in entry:
+            actual = hashlib.sha256(scaler_path.read_bytes()).hexdigest()
+            if actual != entry["scaler_hash"]:
+                raise SecurityError(
+                    f"Scaler file integrity check failed for {entry['scaler_file']}"
+                )
+
+        model = joblib.load(model_path)
+        scaler = joblib.load(scaler_path)
 
         return model, scaler, entry
 
