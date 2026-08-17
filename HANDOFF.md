@@ -56,6 +56,8 @@ All five original build phases are complete. See `README.md` for the full archit
 2. If none is flagged, the entry matching `registry["latest_version"]`.
 3. If neither is present (old-format registry), the last array entry — kept only for backward compatibility.
 
+`latest_version` was left reading `"2.0"` while v1.0 was the deployed model — harmless to the loader, misleading to a reader — and now tracks the deployed entry. `tests/test_registry.py` fails if the two disagree, if more than one entry is flagged `deployed`, or if a recorded hash disagrees with an artefact present on disk.
+
 When you retrain and want to promote a new version to production, set `"deployed": true` on the new entry and remove it (or leave it false) on the old one — don't just append and bump `latest_version`, and don't reorder the array. The array order and `latest_version` are historical bookkeeping now, not the source of truth for what `serve.py` loads.
 
 This exists because of a real incident: the API was silently serving v2.0 (LOF) via array-position fallback while every doc and the project narrative claimed v1.0 (Isolation Forest) was in production. Confirm this stays fixed by checking `GET /model/info` reports `"version": "1.0"` after any registry change.
