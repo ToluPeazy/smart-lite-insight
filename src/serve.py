@@ -121,7 +121,12 @@ api_key_header = APIKeyHeader(name="X-API-Key", auto_error=False)
 
 async def verify_api_key(key: str = Security(api_key_header)):
     api_key = os.getenv("SMARTLITE_API_KEY")
-    if not api_key or not secrets.compare_digest(key or "", api_key):
+    # Compare on UTF-8 bytes: secrets.compare_digest raises TypeError on str
+    # arguments containing non-ASCII characters, which the generic exception
+    # handler would surface as a 500 instead of a clean auth failure.
+    if not api_key or not secrets.compare_digest(
+        (key or "").encode("utf-8"), api_key.encode("utf-8")
+    ):
         raise HTTPException(
             status_code=status.HTTP_403_FORBIDDEN,
             detail="Invalid or missing API key",
