@@ -4,11 +4,14 @@ Exposes endpoints for anomaly scoring, time-series retrieval,
 and model metadata. Designed to run on the Raspberry Pi 5.
 
 Usage:
-    # Start the server
+    # Start the server (no auto-reload)
     python -m src.serve
 
+    # Local development, with auto-reload
+    SMARTLITE_RELOAD=1 python -m src.serve
+
     # Or with uvicorn directly
-    uvicorn src.serve:app --host 0.0.0.0 --port 8000 --reload
+    uvicorn src.serve:app --host 0.0.0.0 --port 8000
 """
 
 import os
@@ -595,6 +598,21 @@ async def get_anomalies(
 # ── CLI ──
 
 
+def reload_enabled() -> bool:
+    """Whether the dev auto-reloader should run.
+
+    Off by default: reload watches the filesystem and re-executes the app on
+    every change, which is wasted work (and an extra process) on the Pi. Set
+    SMARTLITE_RELOAD=1 for local development.
+    """
+    return os.getenv("SMARTLITE_RELOAD", "").strip().lower() in {
+        "1",
+        "true",
+        "yes",
+        "on",
+    }
+
+
 def main():
     import uvicorn
 
@@ -602,7 +620,7 @@ def main():
         "src.serve:app",
         host="0.0.0.0",
         port=8000,
-        reload=True,
+        reload=reload_enabled(),
         log_level="info",
     )
 

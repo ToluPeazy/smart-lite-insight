@@ -98,6 +98,8 @@ python -m src.train
 make dev                     # API on :8000, dashboard on :8501
 ```
 
+`python -m src.serve` runs without auto-reload; set `SMARTLITE_RELOAD=1` for a reloading dev server (`make dev` passes `--reload` to uvicorn directly). Never set it on the Pi — production runs via the compose command, which doesn't use `main()` at all.
+
 `make lint` runs `black --check` + `ruff check`; `make fmt` applies both. `make test` runs pytest with coverage (`--cov=src --cov=seed`, `src/agent.py` excluded via `.coveragerc`, gate is `fail_under = 70`). CI (`.github/workflows/ci.yml`) runs lint → test (3.11 and 3.12) → an ARM64 Docker build on pushes to `main`.
 
 ## Where things stand relative to the collaboration-readiness PRD
