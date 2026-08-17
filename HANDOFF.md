@@ -84,6 +84,8 @@ Current limits, sized for a Pi 5: `/anomaly/score` 30/min, `/timeseries` 20/min,
 
 **Read env vars inside the function, not at module import time.** `verify_api_key()` in `src/serve.py` calls `os.getenv("SMARTLITE_API_KEY")` inside the function body rather than caching it in a module-level constant at import time. Do the same for any new env-derived config that needs to reflect the current environment (tests monkeypatch env vars per-test; a module-level read would freeze the value at first import and ignore later changes).
 
+**Declare what you import.** `requests` (agent) and `pydantic` (serve) were imported while only reachable transitively through `fastapi`/`streamlit` — it works until one of those bumps a pin. Both are now explicit in `pyproject.toml`, and `tests/test_packaging.py` walks the imports in `src/` and fails if a third-party module isn't declared. If that test flags a new import, add the distribution to `[project].dependencies` (or to the import→distribution map when the two names differ, e.g. `sklearn` → `scikit-learn`).
+
 **CORS is an explicit allow-list, not a wildcard.** `src/serve.py` sets `allow_origins` to a fixed list. Any new consumer (e.g. an EcoHome origin in Phase 3) needs to be added there explicitly — don't switch to `allow_origins=["*"]` as a shortcut.
 
 **Secrets never go in tracked files.** `.env` and `compose/.env` are gitignored (and were untracked from history in the Phase 0 cleanup — rotate `SMARTLITE_API_KEY` if you ever suspect the old committed value leaked). `docker-compose.yml` reads `SMARTLITE_API_KEY` via `${SMARTLITE_API_KEY:?...}` substitution from the environment/`.env` — never hardcode a key literal into a compose file or Dockerfile.
