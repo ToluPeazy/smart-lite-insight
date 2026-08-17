@@ -109,3 +109,18 @@ make dev                     # API on :8000, dashboard on :8501
 ## Where things stand relative to the collaboration-readiness PRD
 
 Phase 0 (this audit) fixed the model-loading bug, untracked `.env`/`compose/.env`/`egg-info`/`.pyc`, and committed this file. Phase 1 (base-load estimator) follows in `src/baseload.py`. See the PRD for the full phased plan (API contract hardening, external auth, swappable LLM backend, real data ingestion).
+
+Phase S (the August 2026 security review, gating the Pi deployment) closed out as follows:
+
+| # | Finding | State |
+|---|---------|-------|
+| 1 | Model integrity check failed open | Fixed — fail-closed verification + `scripts/backfill_model_hashes.py`. **The registry still needs the backfill run where the `.joblib` artefacts live; until then the API starts with no model.** |
+| 2 | Unauthenticated dashboard reaching an agent with a retrain tool | Fixed — retrain tool removed, dashboard gated on `SMARTLITE_DASHBOARD_PASSWORD`, exposure rules documented above |
+| 3 | Rate limiting ineffective behind the tunnel, absent on heavy reads | Fixed — `CF-Connecting-IP` key function, limits on `/timeseries` and `/anomalies` |
+| 4 | Non-ASCII `X-API-Key` returned 500 | Fixed — byte comparison |
+| 5 | `reload=True` in `main()` | Fixed — `SMARTLITE_RELOAD`, default off |
+| 6 | `requests` imported but not declared | Fixed — declared (with `pydantic`), guarded by `tests/test_packaging.py` |
+| 7 | `latest_version` disagreed with the deployed model | Fixed — reads `"1.0"`, guarded by `tests/test_registry.py` |
+| 8 | Stale `API_KEY` / `docs/PROJECT_PLAN.md` / `docs/SETUP.md` references | Already resolved before this pass — no such references existed in this file |
+
+Operator actions that remain outside the repo: run the hash backfill and commit the registry, transfer the artefacts, configure the tunnel for port 8000 only, and put an auth layer in front of 8501 (or keep it on the LAN).
