@@ -34,7 +34,19 @@ All five original build phases are complete. See `README.md` for the full archit
 | `src/agent.py` | LLM tool-calling agent over Ollama (excluded from the coverage gate — no live-LLM tests yet) |
 | `seed/replayer.py` | Synthetic data generator for running without the UCI download |
 | `dashboard/app.py` | Streamlit dashboard (consumption chart, anomaly overlay, model info) |
+| `dashboard/auth.py` | Shared-secret gate the dashboard renders behind |
 | `dashboard/chat.py` | Streamlit tab wrapping `agent.py` |
+| `scripts/backfill_model_hashes.py` | One-off backfill of registry integrity hashes |
+
+## What may be exposed publicly
+
+**Only the API (port 8000) goes through the Cloudflare Tunnel.** Every endpoint except `/health` requires `X-API-Key`, and the compute-heavy reads are rate limited.
+
+**The dashboard (port 8501) must not be tunnelled without an auth layer in front of it.** It talks to SQLite directly and constructs the LLM agent in-process, so it bypasses `verify_api_key()` entirely — reaching 8501 means reading all energy data. Keep it on the LAN, or front it with Cloudflare Access / an authenticating proxy / a VPN.
+
+`dashboard/auth.py` is a backstop, not that auth layer: one shared secret in `SMARTLITE_DASHBOARD_PASSWORD`, checked in constant time, and the app renders nothing (not even the sidebar) until it matches. An unset secret locks the dashboard rather than opening it, and `docker-compose.yml` requires the variable, so a misconfiguration fails closed. There is no account model, lockout, or rate limiting behind it — don't treat it as one.
+
+**The agent's tools are read-only, deliberately.** `retrain_model` was removed from `TOOLS`, `TOOL_DISPATCH`, and the confirmation flow in `_execute_tool`/`chat`: an unauthenticated surface must not be able to kick off training on a Pi. Anything added to `TOOLS` is reachable by whoever can reach the dashboard, so keep new tools read-only and parameterised (see the existing SQL). Retraining stays an operator action (`python -m src.train`).
 
 ## Model registry and the `deployed` flag
 
@@ -44,15 +56,37 @@ All five original build phases are complete. See `README.md` for the full archit
 2. If none is flagged, the entry matching `registry["latest_version"]`.
 3. If neither is present (old-format registry), the last array entry — kept only for backward compatibility.
 
+`latest_version` was left reading `"2.0"` while v1.0 was the deployed model — harmless to the loader, misleading to a reader — and now tracks the deployed entry. `tests/test_registry.py` fails if the two disagree, if more than one entry is flagged `deployed`, or if a recorded hash disagrees with an artefact present on disk.
+
 When you retrain and want to promote a new version to production, set `"deployed": true` on the new entry and remove it (or leave it false) on the old one — don't just append and bump `latest_version`, and don't reorder the array. The array order and `latest_version` are historical bookkeeping now, not the source of truth for what `serve.py` loads.
 
 This exists because of a real incident: the API was silently serving v2.0 (LOF) via array-position fallback while every doc and the project narrative claimed v1.0 (Isolation Forest) was in production. Confirm this stays fixed by checking `GET /model/info` reports `"version": "1.0"` after any registry change.
 
+## Model integrity check (fail closed)
+
+`joblib.load()` unpickles, which executes arbitrary code, so `AnomalyDetector._load_model()` verifies the SHA-256 of both the model and the scaler against `model_hash` / `scaler_hash` in the registry entry **before** loading them.
+
+**The check fails closed.** An entry with no recorded hash raises `SecurityError` — it is not loaded unverified. `src/train.py` records both hashes automatically when it saves a model, so anything trained after that change is fine; registries written earlier need a one-off backfill:
+
+```bash
+python scripts/backfill_model_hashes.py          # or --dry-run to preview
+```
+
+The script is idempotent — it only fills in hashes that are absent, skips entries whose `.joblib` files aren't on this machine, and exits non-zero on a mismatch rather than overwriting a recorded hash. The `.joblib` binaries are gitignored, so **run it on the machine that holds the artefacts (and on the Pi after transferring them), then commit the updated `models/registry.json`.** Until an entry has hashes, the API will start with no model and `/anomaly/*` returns 503 — that is the intended failure mode, not a bug to work around by softening the check.
+
+If the check fires unexpectedly, the artefact on disk no longer matches what was trained. Re-copy it or retrain; do not "fix" it by deleting the hash from the registry.
+
 ## Known gotchas
 
-**slowapi parameter ordering.** Any rate-limited endpoint (decorated with `@limiter.limit(...)`) must declare `request: Request` as its *first* parameter, with the request body named `payload` (or similarly, after `request`). slowapi's exception handler needs `request` on the function signature to work; if you add a new limited endpoint and put the body first, the limiter breaks in a way that's easy to miss locally and only shows up under load. See `score_readings(request: Request, body: BatchScoreRequest)` in `src/serve.py` for the pattern to copy.
+**slowapi parameter ordering.** Any rate-limited endpoint (decorated with `@limiter.limit(...)`) must declare `request: Request` as its *first* parameter, with the request body named `payload` (or similarly, after `request`) — never `request`, or it collides with the Starlette object slowapi needs. slowapi's exception handler needs `request` on the function signature to work; if you add a new limited endpoint and put the body first, the limiter breaks in a way that's easy to miss locally and only shows up under load. See `score_readings(request: Request, body: BatchScoreRequest)` in `src/serve.py` for the pattern to copy.
+
+**The rate limiter keys on `CF-Connecting-IP`.** `client_identifier()` in `src/serve.py` prefers that header and falls back to the socket address. This is deliberate and assumes Cloudflare is the only ingress: behind `cloudflared` the socket peer is the local tunnel endpoint, so `get_remote_address` would put every caller in one shared bucket. Cloudflare sets `CF-Connecting-IP` itself and strips any client-supplied copy — **if the API is ever exposed without Cloudflare in front, that header becomes caller-controlled and the limit is trivially evadable.** Revisit the key function before changing the topology.
+
+Current limits, sized for a Pi 5: `/anomaly/score` 30/min, `/timeseries` 20/min, `/anomalies` 10/min. Note that request-body validation runs *before* the limiter, so a malformed payload is rejected without consuming quota.
 
 **Read env vars inside the function, not at module import time.** `verify_api_key()` in `src/serve.py` calls `os.getenv("SMARTLITE_API_KEY")` inside the function body rather than caching it in a module-level constant at import time. Do the same for any new env-derived config that needs to reflect the current environment (tests monkeypatch env vars per-test; a module-level read would freeze the value at first import and ignore later changes).
+
+**Declare what you import.** `requests` (agent) and `pydantic` (serve) were imported while only reachable transitively through `fastapi`/`streamlit` — it works until one of those bumps a pin. Both are now explicit in `pyproject.toml`, and `tests/test_packaging.py` walks the imports in `src/` and fails if a third-party module isn't declared. If that test flags a new import, add the distribution to `[project].dependencies` (or to the import→distribution map when the two names differ, e.g. `sklearn` → `scikit-learn`).
 
 **CORS is an explicit allow-list, not a wildcard.** `src/serve.py` sets `allow_origins` to a fixed list. Any new consumer (e.g. an EcoHome origin in Phase 3) needs to be added there explicitly — don't switch to `allow_origins=["*"]` as a shortcut.
 
@@ -68,8 +102,25 @@ python -m src.train
 make dev                     # API on :8000, dashboard on :8501
 ```
 
+`python -m src.serve` runs without auto-reload; set `SMARTLITE_RELOAD=1` for a reloading dev server (`make dev` passes `--reload` to uvicorn directly). Never set it on the Pi — production runs via the compose command, which doesn't use `main()` at all.
+
 `make lint` runs `black --check` + `ruff check`; `make fmt` applies both. `make test` runs pytest with coverage (`--cov=src --cov=seed`, `src/agent.py` excluded via `.coveragerc`, gate is `fail_under = 70`). CI (`.github/workflows/ci.yml`) runs lint → test (3.11 and 3.12) → an ARM64 Docker build on pushes to `main`.
 
 ## Where things stand relative to the collaboration-readiness PRD
 
 Phase 0 (this audit) fixed the model-loading bug, untracked `.env`/`compose/.env`/`egg-info`/`.pyc`, and committed this file. Phase 1 (base-load estimator) follows in `src/baseload.py`. See the PRD for the full phased plan (API contract hardening, external auth, swappable LLM backend, real data ingestion).
+
+Phase S (the August 2026 security review, gating the Pi deployment) closed out as follows:
+
+| # | Finding | State |
+|---|---------|-------|
+| 1 | Model integrity check failed open | Fixed — fail-closed verification + `scripts/backfill_model_hashes.py`. **The registry still needs the backfill run where the `.joblib` artefacts live; until then the API starts with no model.** |
+| 2 | Unauthenticated dashboard reaching an agent with a retrain tool | Fixed — retrain tool removed, dashboard gated on `SMARTLITE_DASHBOARD_PASSWORD`, exposure rules documented above |
+| 3 | Rate limiting ineffective behind the tunnel, absent on heavy reads | Fixed — `CF-Connecting-IP` key function, limits on `/timeseries` and `/anomalies` |
+| 4 | Non-ASCII `X-API-Key` returned 500 | Fixed — byte comparison |
+| 5 | `reload=True` in `main()` | Fixed — `SMARTLITE_RELOAD`, default off |
+| 6 | `requests` imported but not declared | Fixed — declared (with `pydantic`), guarded by `tests/test_packaging.py` |
+| 7 | `latest_version` disagreed with the deployed model | Fixed — reads `"1.0"`, guarded by `tests/test_registry.py` |
+| 8 | Stale `API_KEY` / `docs/PROJECT_PLAN.md` / `docs/SETUP.md` references | Already resolved before this pass — no such references existed in this file |
+
+Operator actions that remain outside the repo: run the hash backfill and commit the registry, transfer the artefacts, configure the tunnel for port 8000 only, and put an auth layer in front of 8501 (or keep it on the LAN).

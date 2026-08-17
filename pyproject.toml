@@ -24,12 +24,19 @@ dependencies = [
 
     # ── API ──
     "fastapi>=0.110,<1",
+    # Used directly by src/serve.py (BaseModel, Field) — v2 API.
+    "pydantic>=2.6,<3",
     "slowapi>=0.1,<1",
     "uvicorn[standard]>=0.29,<1",
 
     # ── Dashboard ──
     "streamlit>=1.35,<2",
     "plotly>=5.22,<6",
+
+    # ── LLM Agent ──
+    # src/agent.py talks to Ollama over HTTP; declared explicitly rather than
+    # relying on a transitive dependency to provide it.
+    "requests>=2.31",
 
     # ── Utilities ──
     "python-dotenv>=1.0",

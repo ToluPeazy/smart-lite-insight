@@ -16,12 +16,12 @@ test: ## Run all tests with coverage
 	pytest -v --cov=src --cov=seed --cov-report=term-missing
 
 lint: ## Check formatting and linting (black + ruff)
-	black --check --diff src/ dashboard/ seed/ tests/
-	ruff check src/ dashboard/ seed/ tests/
+	black --check --diff src/ scripts/ dashboard/ seed/ tests/
+	ruff check src/ scripts/ dashboard/ seed/ tests/
 
 fmt: ## Auto-format code (black + ruff --fix)
-	black src/ dashboard/ seed/ tests/
-	ruff check --fix src/ dashboard/ seed/ tests/
+	black src/ scripts/ dashboard/ seed/ tests/
+	ruff check --fix src/ scripts/ dashboard/ seed/ tests/
 
 pre-commit: ## Install and run pre-commit hooks
 	pre-commit install
