@@ -90,6 +90,10 @@ cp .env.example .env
 python -m src.ingest
 python -m src.train
 
+# Record model integrity hashes (only needed for models trained before
+# the registry carried hashes — training records them automatically)
+python scripts/backfill_model_hashes.py
+
 # Start services
 make dev
 ```
@@ -150,8 +154,10 @@ smart-lite-insight/
 ├── dashboard/
 │   ├── app.py                      # Streamlit dashboard (main)
 │   └── chat.py                     # AI chat tab
+├── scripts/
+│   └── backfill_model_hashes.py    # Record SHA-256 hashes in the registry
 ├── models/
-│   ├── registry.json               # Model version tracking
+│   ├── registry.json               # Model version tracking + integrity hashes
 │   └── *.joblib                    # Trained models (gitignored)
 ├── tests/
 │   ├── test_ingest.py
@@ -204,6 +210,10 @@ Interactive Swagger docs at `http://localhost:8000/docs`.
 | `get_model_info` | Read | Current model version and metrics |
 | `get_date_range` | Read | Available data range in the database |
 | `retrain_model` | Write | Retrain model (requires explicit confirmation) |
+
+## Security Notes
+
+**Model integrity.** Loading a model unpickles it, which executes code, so every registry entry carries a SHA-256 of its `.joblib` files and `AnomalyDetector` verifies them before loading. The check fails closed: an entry without a recorded hash is refused, not loaded unverified. Training records the hashes automatically; for older registries run `python scripts/backfill_model_hashes.py` on the machine holding the artefacts and commit the updated `models/registry.json`.
 
 ## Data Source
 

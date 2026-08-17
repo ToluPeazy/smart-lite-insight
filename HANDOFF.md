@@ -48,6 +48,20 @@ When you retrain and want to promote a new version to production, set `"deployed
 
 This exists because of a real incident: the API was silently serving v2.0 (LOF) via array-position fallback while every doc and the project narrative claimed v1.0 (Isolation Forest) was in production. Confirm this stays fixed by checking `GET /model/info` reports `"version": "1.0"` after any registry change.
 
+## Model integrity check (fail closed)
+
+`joblib.load()` unpickles, which executes arbitrary code, so `AnomalyDetector._load_model()` verifies the SHA-256 of both the model and the scaler against `model_hash` / `scaler_hash` in the registry entry **before** loading them.
+
+**The check fails closed.** An entry with no recorded hash raises `SecurityError` — it is not loaded unverified. `src/train.py` records both hashes automatically when it saves a model, so anything trained after that change is fine; registries written earlier need a one-off backfill:
+
+```bash
+python scripts/backfill_model_hashes.py          # or --dry-run to preview
+```
+
+The script is idempotent — it only fills in hashes that are absent, skips entries whose `.joblib` files aren't on this machine, and exits non-zero on a mismatch rather than overwriting a recorded hash. The `.joblib` binaries are gitignored, so **run it on the machine that holds the artefacts (and on the Pi after transferring them), then commit the updated `models/registry.json`.** Until an entry has hashes, the API will start with no model and `/anomaly/*` returns 503 — that is the intended failure mode, not a bug to work around by softening the check.
+
+If the check fires unexpectedly, the artefact on disk no longer matches what was trained. Re-copy it or retrain; do not "fix" it by deleting the hash from the registry.
+
 ## Known gotchas
 
 **slowapi parameter ordering.** Any rate-limited endpoint (decorated with `@limiter.limit(...)`) must declare `request: Request` as its *first* parameter, with the request body named `payload` (or similarly, after `request`). slowapi's exception handler needs `request` on the function signature to work; if you add a new limited endpoint and put the body first, the limiter breaks in a way that's easy to miss locally and only shows up under load. See `score_readings(request: Request, body: BatchScoreRequest)` in `src/serve.py` for the pattern to copy.

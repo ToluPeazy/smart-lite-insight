@@ -295,9 +295,7 @@ def save_model(
     joblib.dump(scaler, models_path / scaler_filename)
 
     # Compute SHA-256 hashes for integrity verification
-    model_hash = hashlib.sha256(
-        (models_path / model_filename).read_bytes()
-    ).hexdigest()
+    model_hash = hashlib.sha256((models_path / model_filename).read_bytes()).hexdigest()
     scaler_hash = hashlib.sha256(
         (models_path / scaler_filename).read_bytes()
     ).hexdigest()

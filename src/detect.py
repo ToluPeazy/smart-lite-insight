@@ -11,6 +11,7 @@ Usage:
 """
 
 import hashlib
+import hmac
 import json
 from pathlib import Path
 
@@ -90,24 +91,39 @@ class AnomalyDetector:
         model_path = self.models_dir / entry["model_file"]
         scaler_path = self.models_dir / entry["scaler_file"]
 
-        # Verify file integrity before deserializing
-        if "model_hash" in entry:
-            actual = hashlib.sha256(model_path.read_bytes()).hexdigest()
-            if actual != entry["model_hash"]:
-                raise SecurityError(
-                    f"Model file integrity check failed for {entry['model_file']}"
-                )
-        if "scaler_hash" in entry:
-            actual = hashlib.sha256(scaler_path.read_bytes()).hexdigest()
-            if actual != entry["scaler_hash"]:
-                raise SecurityError(
-                    f"Scaler file integrity check failed for {entry['scaler_file']}"
-                )
+        # Verify file integrity before deserializing. joblib.load() unpickles,
+        # which executes code, so this check fails closed: an entry with no
+        # recorded hash is rejected rather than loaded unverified.
+        self._verify_integrity(model_path, entry.get("model_hash"), "Model")
+        self._verify_integrity(scaler_path, entry.get("scaler_hash"), "Scaler")
 
         model = joblib.load(model_path)
         scaler = joblib.load(scaler_path)
 
         return model, scaler, entry
+
+    @staticmethod
+    def _verify_integrity(path: Path, expected_hash: str | None, label: str) -> None:
+        """Check a file's SHA-256 against the registry, failing closed.
+
+        Args:
+            path: File about to be deserialised.
+            expected_hash: Hash recorded in the registry, or None if absent.
+            label: Human-readable name used in the error message.
+
+        Raises:
+            SecurityError: If the registry records no hash, or it doesn't match.
+        """
+        if not expected_hash:
+            raise SecurityError(
+                f"{label} integrity check failed for {path.name}: "
+                "no hash recorded in the registry. Run "
+                "'python scripts/backfill_model_hashes.py' to record one."
+            )
+
+        actual = hashlib.sha256(path.read_bytes()).hexdigest()
+        if not hmac.compare_digest(actual, expected_hash):
+            raise SecurityError(f"{label} integrity check failed for {path.name}")
 
     def score(self, X_raw: np.ndarray) -> dict:
         """Score a single observation (raw feature values).

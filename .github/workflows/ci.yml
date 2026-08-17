@@ -27,10 +27,10 @@ jobs:
         run: pip install black>=24.4 ruff>=0.4
 
       - name: black (format check)
-        run: black --check --diff src/ dashboard/ seed/ tests/
+        run: black --check --diff src/ scripts/ dashboard/ seed/ tests/
 
       - name: ruff (lint)
-        run: ruff check src/ dashboard/ seed/ tests/
+        run: ruff check src/ scripts/ dashboard/ seed/ tests/
 
   # ── 2. Test ─────────────────────────────────────────────────────────────────
   test:
