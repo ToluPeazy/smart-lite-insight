@@ -71,9 +71,32 @@ app.add_middleware(
     allow_headers=["X-API-Key"],
 )
 
-# Rate limiter: 30 requests per minute per IP for scoring endpoint
+# ── Rate limiting ──
 
-limiter = Limiter(key_func=get_remote_address)
+
+def client_identifier(request: Request) -> str:
+    """Identify the calling client for rate limiting.
+
+    Behind `cloudflared` the socket peer is the local tunnel endpoint, so
+    `get_remote_address` collapses every caller into one shared bucket. This
+    assumes deployment behind Cloudflare, which sets `CF-Connecting-IP` to the
+    real client IP and strips any client-supplied copy of that header.
+
+    Falls back to the socket address when the header is absent (direct LAN
+    access, local development, tests). If this service is ever exposed without
+    Cloudflare in front, the header becomes caller-controlled and the limiter
+    becomes trivially evadable — revisit this before changing the topology.
+    """
+    cf_connecting_ip = request.headers.get("CF-Connecting-IP")
+    if cf_connecting_ip:
+        return cf_connecting_ip.strip()
+
+    return get_remote_address(request)
+
+
+# Limits are sized for a Pi 5: /anomaly/score and /anomalies run feature
+# engineering plus model scoring, /timeseries can return ~10k rows.
+limiter = Limiter(key_func=client_identifier)
 app.state.limiter = limiter
 app.add_exception_handler(RateLimitExceeded, _rate_limit_exceeded_handler)
 
@@ -358,7 +381,9 @@ async def score_readings(request: Request, body: BatchScoreRequest):
     response_model=TimeSeriesResponse,
     tags=["Time Series"],
 )
+@limiter.limit("20/minute")
 async def get_timeseries(
+    request: Request,
     start: datetime = Query(None, description="Start timestamp (ISO 8601)"),
     end: datetime = Query(None, description="End timestamp (ISO 8601)"),
     hours: int = Query(
@@ -411,9 +436,7 @@ async def get_timeseries(
     except Exception as e:
         conn.close()
         logger.error(f"Database query failed: {e}")
-        raise HTTPException(
-            status_code=503, detail="Database query failed"
-        ) from e
+        raise HTTPException(status_code=503, detail="Database query failed") from e
 
     conn.close()
 
@@ -471,7 +494,9 @@ async def get_timeseries(
 @app.get(
     "/anomalies", dependencies=[Depends(verify_api_key)], tags=["Anomaly Detection"]
 )
+@limiter.limit("10/minute")
 async def get_anomalies(
+    request: Request,
     start: datetime = Query(None, description="Start timestamp"),
     end: datetime = Query(None, description="End timestamp"),
     hours: int = Query(24, ge=1, le=168, description="Hours to scan"),
@@ -521,9 +546,7 @@ async def get_anomalies(
     except Exception as e:
         conn.close()
         logger.error(f"Database query failed: {e}")
-        raise HTTPException(
-            status_code=503, detail="Database query failed"
-        ) from e
+        raise HTTPException(status_code=503, detail="Database query failed") from e
 
     conn.close()
 

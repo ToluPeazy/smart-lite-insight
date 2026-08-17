@@ -194,15 +194,18 @@ smart-lite-insight/
 
 ## API Endpoints
 
-| Method | Endpoint | Description |
-|--------|----------|-------------|
-| GET | `/health` | System status, model + DB check |
-| GET | `/model/info` | Loaded model metadata |
-| POST | `/anomaly/score` | Score a batch of readings |
-| GET | `/timeseries` | Retrieve data with optional anomaly overlay |
-| GET | `/anomalies` | Find top anomalies in a time range |
+| Method | Endpoint | Description | Auth | Rate limit |
+|--------|----------|-------------|------|------------|
+| GET | `/health` | Liveness only (`{"status": "ok"}`) | — | — |
+| GET | `/health/details` | Model + DB status | `X-API-Key` | — |
+| GET | `/model/info` | Loaded model metadata | `X-API-Key` | — |
+| POST | `/anomaly/score` | Score a batch of readings | `X-API-Key` | 30/min |
+| GET | `/timeseries` | Retrieve data with optional anomaly overlay | `X-API-Key` | 20/min |
+| GET | `/anomalies` | Find top anomalies in a time range | `X-API-Key` | 10/min |
 
 Interactive Swagger docs at `http://localhost:8000/docs`.
+
+Rate limits are per client IP and sized for a Pi 5 — `/timeseries` and `/anomalies` run feature engineering and model scoring over up to ~10k rows. The limiter identifies the caller by `CF-Connecting-IP` when present, falling back to the socket address, because behind `cloudflared` every request otherwise appears to come from the local tunnel endpoint and shares one bucket. **This assumes Cloudflare is the only ingress**: it sets that header and strips a client-supplied copy. Exposed any other way, the header is caller-controlled and the limit is evadable.
 
 ## LLM Agent Tools
 
