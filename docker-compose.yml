@@ -41,6 +41,11 @@ services:
       - OLLAMA_BASE_URL=${OLLAMA_BASE_URL:-http://localhost:11434}
       - OLLAMA_MODEL=${OLLAMA_MODEL:-llama3.1:8b}
       - SMARTLITE_API_KEY=${SMARTLITE_API_KEY:?SMARTLITE_API_KEY must be set in .env}
+      # The dashboard reads SQLite directly and runs the LLM agent in-process,
+      # so it never passes the API-key check — it gates on its own secret.
+      # Do not expose port 8501 publicly; keep it on the LAN or behind
+      # Cloudflare Access. See README.md § Exposing the stack.
+      - SMARTLITE_DASHBOARD_PASSWORD=${SMARTLITE_DASHBOARD_PASSWORD:?SMARTLITE_DASHBOARD_PASSWORD must be set in .env}
     command: streamlit run dashboard/app.py --server.port 8501 --server.address 0.0.0.0 --server.headless true
     restart: unless-stopped
     depends_on:

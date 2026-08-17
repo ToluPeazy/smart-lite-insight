@@ -49,7 +49,7 @@ An end-to-end machine learning pipeline that ingests household energy data, dete
 │                  INTERFACE LAYER                      │
 │  [Streamlit Dashboard]        [LLM Agent]            │
 │  • Consumption chart          • Ollama + Llama 3.1   │
-│  • Anomaly overlay            • 6 data tools         │
+│  • Anomaly overlay            • 5 read-only tools    │
 │  • Voltage stability          • Conversation memory  │
 │  • Sub-metering breakdown     • Audit logging        │
 │  • Model info sidebar         • Chat UI tab          │
@@ -63,11 +63,14 @@ An end-to-end machine learning pipeline that ingests household energy data, dete
 ```bash
 git clone https://github.com/ToluPeazy/smart-lite-insight.git
 cd smart-lite-insight
+cp .env.example .env       # set SMARTLITE_API_KEY and SMARTLITE_DASHBOARD_PASSWORD
 docker compose up -d
 ```
 
 - API: http://localhost:8000/docs
-- Dashboard: http://localhost:8501
+- Dashboard: http://localhost:8501 (asks for `SMARTLITE_DASHBOARD_PASSWORD`)
+
+Both secrets are required — compose refuses to start without them. See [Security Notes](#security-notes) before exposing either port beyond the LAN.
 
 ### Option B: Local Development
 
@@ -129,7 +132,7 @@ python -m src.agent
 | IF anomaly detection rate | 1.00% (20,486 anomalies) |
 | LOF anomaly detection rate | 0.81% (16,662 anomalies) |
 | API endpoints | 5 (health, score, timeseries, anomalies, model info) |
-| LLM agent tools | 6 (timeseries, anomalies, statistics, model info, date range, retrain) |
+| LLM agent tools | 5 read-only (timeseries, anomalies, statistics, model info, date range) |
 
 ## Project Structure
 
@@ -153,6 +156,7 @@ smart-lite-insight/
 │   └── replayer.py                 # 7-day synthetic data generator
 ├── dashboard/
 │   ├── app.py                      # Streamlit dashboard (main)
+│   ├── auth.py                     # Shared-secret gate for the dashboard
 │   └── chat.py                     # AI chat tab
 ├── scripts/
 │   └── backfill_model_hashes.py    # Record SHA-256 hashes in the registry
@@ -209,11 +213,26 @@ Interactive Swagger docs at `http://localhost:8000/docs`.
 | `get_statistics` | Read | Summary stats (mean, max, min, total kWh) |
 | `get_model_info` | Read | Current model version and metrics |
 | `get_date_range` | Read | Available data range in the database |
-| `retrain_model` | Write | Retrain model (requires explicit confirmation) |
+
+The tool set is read-only by design. The agent runs **in-process inside the dashboard**, which has no API-key check of its own, so it must not be able to trigger writes or long-running work. Retraining is an operator action: run `python -m src.train` on the host.
 
 ## Security Notes
 
-**Model integrity.** Loading a model unpickles it, which executes code, so every registry entry carries a SHA-256 of its `.joblib` files and `AnomalyDetector` verifies them before loading. The check fails closed: an entry without a recorded hash is refused, not loaded unverified. Training records the hashes automatically; for older registries run `python scripts/backfill_model_hashes.py` on the machine holding the artefacts and commit the updated `models/registry.json`.
+### Exposing the stack
+
+**Expose only the API (port 8000) through the Cloudflare Tunnel.** It is the only surface with authentication: every endpoint except `/health` requires `X-API-Key`, and the compute-heavy reads are rate limited.
+
+**Do not tunnel the dashboard (port 8501).** It queries SQLite directly and runs the LLM agent in-process, so it never passes through the API key — anything that can reach 8501 can read all energy data. Keep it on the LAN, or put a real auth layer in front of it (Cloudflare Access, an authenticating reverse proxy, or a VPN).
+
+As a backstop, the dashboard gates itself on `SMARTLITE_DASHBOARD_PASSWORD` and renders nothing until that secret is set and matched. It is one shared secret with no rate limiting or account model — a seatbelt against accidental exposure, not a substitute for the auth layer above.
+
+### Agent tools
+
+The LLM agent's tools are read-only. There is no retrain (or any other write) tool, because the agent is reachable from the dashboard, which is not authenticated by the API key. Retrain from the host with `python -m src.train`.
+
+### Model integrity
+
+Loading a model unpickles it, which executes code, so every registry entry carries a SHA-256 of its `.joblib` files and `AnomalyDetector` verifies them before loading. The check fails closed: an entry without a recorded hash is refused, not loaded unverified. Training records the hashes automatically; for older registries run `python scripts/backfill_model_hashes.py` on the machine holding the artefacts and commit the updated `models/registry.json`.
 
 ## Data Source
 

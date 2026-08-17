@@ -41,6 +41,7 @@ Rules:
 6. If a tool returns an error, explain it clearly to the user.
 7. Format numbers nicely (e.g., "4.21 kW" not "4.216148").
 8. When discussing time periods, be specific about dates and times.
+9. Your tools are read-only. You cannot retrain the model, write to the database, or change any configuration. If asked to do any of those, say so and point the user at the operator commands in the README (e.g. `python -m src.train` for retraining).
 
 The data comes from the UCI Individual Household Electric Power Consumption dataset — a real French household measured at 1-minute intervals from 2006 to 2010."""
 
@@ -139,23 +140,6 @@ TOOLS = [
             "parameters": {
                 "type": "object",
                 "properties": {},
-            },
-        },
-    },
-    {
-        "type": "function",
-        "function": {
-            "name": "retrain_model",
-            "description": "Retrain the anomaly detection model. This is a WRITE operation that requires explicit user confirmation. Only call this if the user has clearly asked to retrain.",
-            "parameters": {
-                "type": "object",
-                "properties": {
-                    "confirm": {
-                        "type": "boolean",
-                        "description": "Must be true to proceed. Ask the user to confirm first.",
-                    },
-                },
-                "required": ["confirm"],
             },
         },
     },
@@ -386,28 +370,10 @@ def tool_get_date_range() -> dict:
         return {"error": str(e)}
 
 
-def tool_retrain_model(confirm: bool = False) -> dict:
-    """Retrain the anomaly detection model."""
-    if not confirm:
-        return {
-            "status": "blocked",
-            "message": "Retraining requires explicit confirmation. Ask the user to confirm.",
-        }
-
-    try:
-        from src.train import train_pipeline
-
-        results = train_pipeline(compare=False)
-        return {
-            "status": "success",
-            "message": "Model retrained successfully.",
-            "version": results.get("version", "unknown"),
-        }
-    except Exception as e:
-        return {"error": str(e)}
-
-
-# Tool dispatch — retrain_model excluded; requires human confirmation flow
+# Tool dispatch — read-only by design. The agent runs in-process behind the
+# Streamlit dashboard, which has no API-key auth of its own, so it must not be
+# able to trigger writes or long-running work. Retraining is an operator action:
+# run `python -m src.train` on the host.
 TOOL_DISPATCH = {
     "get_timeseries": tool_get_timeseries,
     "get_anomalies": tool_get_anomalies,
@@ -440,7 +406,6 @@ class Agent:
         self.model = model
         self.conversation: list[dict] = []
         self.tool_log: list[dict] = []
-        self._retrain_pending: bool = False
 
         # Verify Ollama is reachable
         try:
@@ -487,31 +452,22 @@ class Agent:
         """Execute a tool and return the result as a string."""
         logger.info(f"Tool call: {tool_name}({arguments})")
 
-        # Handle retrain_model via the confirmation flow
-        if tool_name == "retrain_model":
-            self._retrain_pending = True
-            result = {
-                "status": "pending_confirmation",
-                "message": "Retraining requires human confirmation. "
-                "Please type 'yes' to confirm.",
-            }
+        func = TOOL_DISPATCH.get(tool_name)
+        if func is None:
+            result = {"error": f"Unknown tool: {tool_name}"}
         else:
-            func = TOOL_DISPATCH.get(tool_name)
-            if func is None:
-                result = {"error": f"Unknown tool: {tool_name}"}
-            else:
-                # Filter arguments to only schema-defined keys
-                allowed = _TOOL_PARAMS.get(tool_name, set())
-                extra_keys = set(arguments.keys()) - allowed
-                if extra_keys:
-                    logger.warning(
-                        f"Dropped unexpected arguments for {tool_name}: {extra_keys}"
-                    )
-                    arguments = {k: v for k, v in arguments.items() if k in allowed}
-                try:
-                    result = func(**arguments)
-                except Exception as e:
-                    result = {"error": f"Tool execution failed: {e}"}
+            # Filter arguments to only schema-defined keys
+            allowed = _TOOL_PARAMS.get(tool_name, set())
+            extra_keys = set(arguments.keys()) - allowed
+            if extra_keys:
+                logger.warning(
+                    f"Dropped unexpected arguments for {tool_name}: {extra_keys}"
+                )
+                arguments = {k: v for k, v in arguments.items() if k in allowed}
+            try:
+                result = func(**arguments)
+            except Exception as e:
+                result = {"error": f"Tool execution failed: {e}"}
 
         # Log the tool call
         self.tool_log.append(
@@ -527,21 +483,6 @@ class Agent:
 
     def chat(self, user_message: str) -> str:
         """Send a message and get a response, handling tool calls."""
-        # Handle pending retrain confirmation
-        if self._retrain_pending:
-            self._retrain_pending = False
-            if user_message.strip().lower() in ("yes", "y", "confirm"):
-                result = tool_retrain_model(confirm=True)
-                reply = json.dumps(result, indent=2)
-                self.conversation.append({"role": "user", "content": user_message})
-                self.conversation.append({"role": "assistant", "content": reply})
-                return reply
-            else:
-                reply = "Retraining cancelled."
-                self.conversation.append({"role": "user", "content": user_message})
-                self.conversation.append({"role": "assistant", "content": reply})
-                return reply
-
         # Build messages with system prompt
         messages = [{"role": "system", "content": SYSTEM_PROMPT}]
         messages.extend(self.conversation)

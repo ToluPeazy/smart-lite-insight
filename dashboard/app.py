@@ -454,6 +454,16 @@ def render_anomaly_table(scored: pd.DataFrame | None):
 
 def main():
     """Main application entry point."""
+    try:
+        from dashboard.auth import require_password
+    except ModuleNotFoundError:
+        from auth import require_password
+
+    # The dashboard bypasses the API key (direct SQLite + in-process agent),
+    # so nothing renders until the shared secret is supplied.
+    if not require_password():
+        return
+
     params = render_sidebar()
 
     # Tabs

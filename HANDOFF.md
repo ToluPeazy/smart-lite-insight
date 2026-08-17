@@ -34,7 +34,19 @@ All five original build phases are complete. See `README.md` for the full archit
 | `src/agent.py` | LLM tool-calling agent over Ollama (excluded from the coverage gate — no live-LLM tests yet) |
 | `seed/replayer.py` | Synthetic data generator for running without the UCI download |
 | `dashboard/app.py` | Streamlit dashboard (consumption chart, anomaly overlay, model info) |
+| `dashboard/auth.py` | Shared-secret gate the dashboard renders behind |
 | `dashboard/chat.py` | Streamlit tab wrapping `agent.py` |
+| `scripts/backfill_model_hashes.py` | One-off backfill of registry integrity hashes |
+
+## What may be exposed publicly
+
+**Only the API (port 8000) goes through the Cloudflare Tunnel.** Every endpoint except `/health` requires `X-API-Key`, and the compute-heavy reads are rate limited.
+
+**The dashboard (port 8501) must not be tunnelled without an auth layer in front of it.** It talks to SQLite directly and constructs the LLM agent in-process, so it bypasses `verify_api_key()` entirely — reaching 8501 means reading all energy data. Keep it on the LAN, or front it with Cloudflare Access / an authenticating proxy / a VPN.
+
+`dashboard/auth.py` is a backstop, not that auth layer: one shared secret in `SMARTLITE_DASHBOARD_PASSWORD`, checked in constant time, and the app renders nothing (not even the sidebar) until it matches. An unset secret locks the dashboard rather than opening it, and `docker-compose.yml` requires the variable, so a misconfiguration fails closed. There is no account model, lockout, or rate limiting behind it — don't treat it as one.
+
+**The agent's tools are read-only, deliberately.** `retrain_model` was removed from `TOOLS`, `TOOL_DISPATCH`, and the confirmation flow in `_execute_tool`/`chat`: an unauthenticated surface must not be able to kick off training on a Pi. Anything added to `TOOLS` is reachable by whoever can reach the dashboard, so keep new tools read-only and parameterised (see the existing SQL). Retraining stays an operator action (`python -m src.train`).
 
 ## Model registry and the `deployed` flag
 
