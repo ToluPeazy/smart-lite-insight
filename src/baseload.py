@@ -66,12 +66,21 @@ def _load_readings(
             """
             params = (site_id,)
         df = pd.read_sql_query(query, conn, params=params, parse_dates=["timestamp"])
+        if df.empty:
+            sites = [
+                row[0]
+                for row in conn.execute(
+                    "SELECT DISTINCT site_id FROM readings ORDER BY site_id"
+                )
+            ]
     finally:
         conn.close()
 
     if df.empty:
+        available = ", ".join(f"'{s}'" for s in sites) or "none"
         raise ValueError(
-            f"No readings found for site_id='{site_id}' in the given range"
+            f"No readings found for site_id='{site_id}' in the given range. "
+            f"Sites in this database: {available}."
         )
 
     return df.set_index("timestamp").sort_index()

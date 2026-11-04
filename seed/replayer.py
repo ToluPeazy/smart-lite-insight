@@ -342,6 +342,12 @@ def main():
         help=f"Path to SQLite DB (default: {DEFAULT_DB_PATH})",
     )
     parser.add_argument(
+        "--site-id",
+        type=str,
+        default=DEFAULT_SITE_ID,
+        help=f"Site identifier to write (default: {DEFAULT_SITE_ID})",
+    )
+    parser.add_argument(
         "--anomaly-rate",
         type=float,
         default=DEFAULT_ANOMALY_RATE,
@@ -376,6 +382,7 @@ def main():
         replay_live(
             days=args.days,
             db_path=args.db_path,
+            site_id=args.site_id,
             interval_sec=args.interval,
             anomaly_rate=args.anomaly_rate,
             max_rows=args.max_rows,
@@ -384,6 +391,7 @@ def main():
         replay_bulk(
             days=args.days,
             db_path=args.db_path,
+            site_id=args.site_id,
             anomaly_rate=args.anomaly_rate,
             seed=args.seed,
         )

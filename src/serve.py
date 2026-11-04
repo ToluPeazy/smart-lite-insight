@@ -19,6 +19,7 @@ import secrets
 import sqlite3
 from contextlib import asynccontextmanager
 from datetime import datetime
+from pathlib import Path
 
 import pandas as pd
 from fastapi import Depends, FastAPI, HTTPException, Query, Request, Security, status
@@ -257,6 +258,28 @@ def get_db_connection(db_path: str = DEFAULT_DB_PATH) -> sqlite3.Connection:
         raise HTTPException(status_code=503, detail="Database unavailable") from e
 
 
+def database_ready(db_path: str) -> bool:
+    """True if the database file exists and holds a `readings` table.
+
+    Opens the file read-only, so a missing database is reported as missing
+    rather than silently created empty by `sqlite3.connect()`.
+    """
+    path = Path(db_path)
+    if not path.is_file():
+        return False
+    try:
+        conn = sqlite3.connect(f"{path.resolve().as_uri()}?mode=ro", uri=True)
+        try:
+            row = conn.execute(
+                "SELECT 1 FROM sqlite_master WHERE type = 'table' AND name = 'readings'"
+            ).fetchone()
+        finally:
+            conn.close()
+    except sqlite3.Error:
+        return False
+    return row is not None
+
+
 def require_detector() -> AnomalyDetector:
     """Ensure the detector is loaded."""
     if detector is None:
@@ -293,14 +316,7 @@ async def health_check():
 )
 async def health_details():
     """Detailed health check (auth-protected)."""
-    db_ok = False
-    try:
-        conn = sqlite3.connect(DEFAULT_DB_PATH)
-        conn.execute("SELECT 1")
-        conn.close()
-        db_ok = True
-    except Exception:
-        pass
+    db_ok = database_ready(DEFAULT_DB_PATH)
 
     return HealthDetailResponse(
         status="healthy" if detector and db_ok else "degraded",

@@ -287,3 +287,10 @@ def test_cli_writes_to_output_file(tmp_db, monkeypatch, tmp_path):
     profile = json.loads(out_path.read_text())
     assert profile["method"] == "quantile"
     assert len(profile["slots"]) == 48
+
+
+def test_unknown_site_error_names_the_available_sites(tmp_db):
+    _build_two_day_fixture(tmp_db, site_id="home-synth")
+
+    with pytest.raises(ValueError, match="Sites in this database: 'home-synth'"):
+        compute_base_load(tmp_db, site_id="home-01")

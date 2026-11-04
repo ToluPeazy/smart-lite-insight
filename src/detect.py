@@ -21,7 +21,7 @@ import pandas as pd
 from loguru import logger
 
 from src.features import build_feature_matrix
-from src.train import DEFAULT_MODELS_DIR
+from src.train import DEFAULT_MODELS_DIR, select_served_entry
 
 
 class SecurityError(Exception):
@@ -78,15 +78,7 @@ class AnomalyDetector:
                 raise ValueError(f"Version {version} not found in registry")
             entry = matches[-1]
         else:
-            deployed = [m for m in registry["models"] if m.get("deployed")]
-            if deployed:
-                entry = deployed[-1]
-            else:
-                latest_version = registry.get("latest_version")
-                matches = [
-                    m for m in registry["models"] if m["version"] == latest_version
-                ]
-                entry = matches[-1] if matches else registry["models"][-1]
+            entry = select_served_entry(registry)
 
         model_path = self.models_dir / entry["model_file"]
         scaler_path = self.models_dir / entry["scaler_file"]

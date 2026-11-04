@@ -112,7 +112,11 @@ def main() -> int:
     )
     args = parser.parse_args()
 
-    result = backfill_registry(args.models_dir, dry_run=args.dry_run)
+    try:
+        result = backfill_registry(args.models_dir, dry_run=args.dry_run)
+    except FileNotFoundError as exc:
+        print(f"error: {exc}", file=sys.stderr)
+        return 2
 
     for item in result["updated"]:
         print(f"  recorded hash: {item}")

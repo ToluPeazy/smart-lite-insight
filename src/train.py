@@ -51,11 +51,18 @@ def load_training_data(
     Args:
         db_path: Path to SQLite database.
         site_id: Site to load data for.
-        sample_frac: Optional fraction to subsample (for faster iteration).
+        sample_frac: Optional fraction of feature rows to keep (for faster
+            iteration). Applied after feature engineering, seed 42.
 
     Returns:
         Feature-engineered DataFrame ready for training.
+
+    Raises:
+        ValueError: If sample_frac is outside (0, 1].
     """
+    if sample_frac is not None and not 0 < sample_frac <= 1:
+        raise ValueError(f"sample_frac must be in (0, 1], got {sample_frac}")
+
     conn = sqlite3.connect(db_path)
     df = pd.read_sql_query(
         """
@@ -83,12 +90,16 @@ def load_training_data(
 
     df = df.set_index("timestamp")
 
-    if sample_frac is not None and sample_frac < 1.0:
-        df = df.sample(frac=sample_frac, random_state=42).sort_index()
-
     logger.info(f"Loaded {len(df):,} raw readings for site '{site_id}'")
 
+    # Features are built on the full, contiguous series: lags, rolling windows
+    # and differences assume consecutive 1-minute readings, so subsampling the
+    # raw rows first would compute them across random gaps.
     df_features = build_feature_matrix(df, drop_na=True)
+
+    if sample_frac is not None and sample_frac < 1.0:
+        df_features = df_features.sample(frac=sample_frac, random_state=42).sort_index()
+        logger.info(f"Subsampled feature rows: frac={sample_frac}, random_state=42")
     logger.info(
         f"Feature matrix: {df_features.shape[0]:,} rows × {df_features.shape[1]} columns"
     )
@@ -148,7 +159,8 @@ def train_lof(
 ) -> LocalOutlierFactor:
     """Train a Local Outlier Factor model.
 
-    Note: LOF with novelty=True can be used for prediction on new data.
+    Note: novelty=True allows scoring *new* data. Do not call predict() on the
+    training data; use training_flags() instead.
 
     Args:
         X: Scaled feature matrix.
@@ -171,28 +183,90 @@ def train_lof(
 # ── Evaluation ──
 
 
+def training_flags(model, X: np.ndarray) -> tuple[np.ndarray, np.ndarray]:
+    """Return (predictions, scores) for the data the model was fitted on.
+
+    `LocalOutlierFactor(novelty=True)` must not be scored with `predict()` /
+    `decision_function()` on its own training data: each point is returned as
+    one of its own neighbours, which biases it towards "inlier". For training
+    data use the fit-time `negative_outlier_factor_` against `offset_`, which
+    is exactly what `fit_predict()` with `novelty=False` would return.
+
+    Predictions follow the sklearn convention: 1 = normal, -1 = flagged.
+    """
+    if isinstance(model, LocalOutlierFactor):
+        # `_fit_X` is scikit-learn's stored copy of the fitting data. It is
+        # private, so fall back to a row-count check if it is ever absent.
+        fitted = getattr(model, "_fit_X", None)
+        same = (
+            np.array_equal(np.asarray(X), fitted)
+            if fitted is not None
+            else len(X) == len(model.negative_outlier_factor_)
+        )
+        if not same:
+            raise ValueError("training_flags() needs the matrix the LOF was fitted on")
+        scores = model.negative_outlier_factor_ - model.offset_
+        predictions = np.where(scores < 0, -1, 1)
+        return predictions, scores
+
+    return model.predict(X), model.decision_function(X)
+
+
+def flag_agreement(pred_a: np.ndarray, pred_b: np.ndarray) -> dict:
+    """Agreement between two models' flags on the same rows.
+
+    There are no ground-truth labels, so this measures agreement only: it says
+    nothing about which model is right.
+    """
+    a = np.asarray(pred_a) == -1
+    b = np.asarray(pred_b) == -1
+    n = len(a)
+    if n == 0 or n != len(b):
+        raise ValueError("Predictions must be non-empty and the same length")
+
+    observed = float(np.mean(a == b))
+    pa, pb = a.mean(), b.mean()
+    expected = float(pa * pb + (1 - pa) * (1 - pb))
+    kappa = 1.0 if expected == 1.0 else (observed - expected) / (1 - expected)
+    union = int((a | b).sum())
+
+    return {
+        "n": n,
+        "flagged_a": int(a.sum()),
+        "flagged_b": int(b.sum()),
+        "flagged_both": int((a & b).sum()),
+        "jaccard": (int((a & b).sum()) / union) if union else 1.0,
+        "cohen_kappa": round(float(kappa), 4),
+    }
+
+
+def monthly_flag_rates(index: pd.Index, predictions: np.ndarray) -> dict[str, float]:
+    """Share of rows flagged per calendar month (a stability check, not accuracy)."""
+    flagged = pd.Series(np.asarray(predictions) == -1, index=pd.DatetimeIndex(index))
+    rates = flagged.groupby(flagged.index.to_period("M")).mean()
+    return {str(period): round(float(rate), 4) for period, rate in rates.items()}
+
+
 def evaluate_model(
     model,
     X: np.ndarray,
     model_name: str,
 ) -> dict:
-    """Evaluate an anomaly detection model.
+    """Summarise a fitted model's flags and scores on its training data.
 
-    Since we don't have ground-truth labels for all data, we evaluate
-    using the model's own predictions and anomaly scores to report
-    detection statistics.
+    There are no ground-truth labels, so these are descriptive statistics, not
+    detection performance. With `contamination` set, the flag rate on the
+    training data is fixed by construction (≈ contamination).
 
     Args:
         model: Fitted sklearn anomaly detection model.
-        X: Scaled feature matrix.
+        X: The scaled feature matrix the model was fitted on.
         model_name: Name for logging.
 
     Returns:
         Dict with evaluation metrics.
     """
-    # Predict: 1 = normal, -1 = anomaly (sklearn convention)
-    predictions = model.predict(X)
-    scores = model.decision_function(X)
+    predictions, scores = training_flags(model, X)
 
     n_anomalies = (predictions == -1).sum()
     n_total = len(predictions)
@@ -234,6 +308,26 @@ def evaluate_model(
 
 
 # ── Model Registry ──
+
+
+def select_served_entry(registry: dict) -> dict | None:
+    """Return the registry entry the API serves, or None for an empty registry.
+
+    Order: the entry flagged `"deployed": true`; else the entry matching
+    `latest_version`; else the last entry (registries older than both fields).
+    `AnomalyDetector` uses this, so training and serving agree on it.
+    """
+    models = registry.get("models") or []
+    if not models:
+        return None
+
+    deployed = [m for m in models if m.get("deployed")]
+    if deployed:
+        return deployed[-1]
+
+    latest_version = registry.get("latest_version")
+    matches = [m for m in models if m["version"] == latest_version]
+    return matches[-1] if matches else models[-1]
 
 
 def get_next_version(models_dir: str = DEFAULT_MODELS_DIR) -> str:
@@ -322,9 +416,15 @@ def save_model(
         "score_stats": metrics["score_stats"],
     }
 
+    # Training never changes what is served. `latest_version` is pinned to the
+    # entry the API serves *before* this one is appended (the deployed entry if
+    # flagged), or to this version for the first model in a new registry.
+    # Promoting a later version is a deliberate operator step (HANDOFF.md).
+    served = select_served_entry(registry)
+
     registry["models"].append(entry)
     registry["last_updated"] = datetime.now().isoformat()
-    registry["latest_version"] = version
+    registry["latest_version"] = served["version"] if served else version
 
     with open(registry_path, "w") as f:
         json.dump(registry, f, indent=2)
@@ -336,34 +436,6 @@ def save_model(
     return version
 
 
-def load_latest_model(models_dir: str = DEFAULT_MODELS_DIR) -> tuple:
-    """Load the latest model, scaler, and metadata from the registry.
-
-    Args:
-        models_dir: Path to models directory.
-
-    Returns:
-        Tuple of (model, scaler, registry_entry).
-    """
-    registry_path = Path(models_dir) / "registry.json"
-
-    with open(registry_path) as f:
-        registry = json.load(f)
-
-    if not registry.get("models"):
-        raise FileNotFoundError("No models in registry")
-
-    latest = registry["models"][-1]
-    models_path = Path(models_dir)
-
-    model = joblib.load(models_path / latest["model_file"])
-    scaler = joblib.load(models_path / latest["scaler_file"])
-
-    logger.info(f"Loaded model: {latest['model_file']} (v{latest['version']})")
-
-    return model, scaler, latest
-
-
 # ── Main Training Pipeline ──
 
 
@@ -372,6 +444,7 @@ def train_pipeline(
     contamination: float = DEFAULT_CONTAMINATION,
     compare: bool = False,
     sample_frac: float | None = None,
+    models_dir: str = DEFAULT_MODELS_DIR,
 ) -> dict:
     """Run the full training pipeline.
 
@@ -380,6 +453,7 @@ def train_pipeline(
         contamination: Expected anomaly rate.
         compare: If True, train both IF and LOF and compare.
         sample_frac: Optional subsample fraction for faster iteration.
+        models_dir: Directory holding the registry and model files.
 
     Returns:
         Dict with training results.
@@ -408,6 +482,7 @@ def train_pipeline(
         feature_names,
         if_metrics,
         model_name="isolation_forest",
+        models_dir=models_dir,
     )
     results["isolation_forest"] = {
         "version": version,
@@ -425,21 +500,40 @@ def train_pipeline(
             feature_names,
             lof_metrics,
             model_name="lof",
+            models_dir=models_dir,
         )
         results["lof"] = {
             "version": lof_version,
             "metrics": lof_metrics,
         }
 
+        if_pred, _ = training_flags(if_model, X)
+        lof_pred, _ = training_flags(lof_model, X)
+        results["agreement"] = flag_agreement(if_pred, lof_pred)
+        results["monthly_flag_rates"] = {
+            "isolation_forest": monthly_flag_rates(df.index, if_pred),
+            "lof": monthly_flag_rates(df.index, lof_pred),
+        }
+
         # Compare
         logger.info("\n" + "=" * 50)
         logger.info("MODEL COMPARISON")
         logger.info("=" * 50)
-        for _name, r in results.items():
-            m = r["metrics"]
+        for name in ("isolation_forest", "lof"):
+            m = results[name]["metrics"]
             logger.info(
                 f"  {m['model_name']}: {m['n_anomalies']:,} anomalies ({m['anomaly_rate']:.2%})"
             )
+        agreement = results["agreement"]
+        logger.info(
+            f"  IF–LOF agreement: kappa={agreement['cohen_kappa']:.3f}, "
+            f"jaccard={agreement['jaccard']:.3f}, "
+            f"flagged by both={agreement['flagged_both']:,}"
+        )
+        logger.info("  Monthly flag rates (IF / LOF):")
+        for month, if_rate in results["monthly_flag_rates"]["isolation_forest"].items():
+            lof_rate = results["monthly_flag_rates"]["lof"].get(month, float("nan"))
+            logger.info(f"    {month}: {if_rate:.2%} / {lof_rate:.2%}")
         logger.info("=" * 50)
 
     return results

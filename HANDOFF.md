@@ -58,7 +58,9 @@ All five original build phases are complete. See `README.md` for the full archit
 
 `latest_version` was left reading `"2.0"` while v1.0 was the deployed model — harmless to the loader, misleading to a reader — and now tracks the deployed entry. `tests/test_registry.py` fails if the two disagree, if more than one entry is flagged `deployed`, or if a recorded hash disagrees with an artefact present on disk.
 
-When you retrain and want to promote a new version to production, set `"deployed": true` on the new entry and remove it (or leave it false) on the old one — don't just append and bump `latest_version`, and don't reorder the array. The array order and `latest_version` are historical bookkeeping now, not the source of truth for what `serve.py` loads.
+To promote a new version to production: set `"deployed": true` on the new entry, remove it (or set it false) on the old one, and set `latest_version` to the new version so it keeps matching the deployed entry (`tests/test_registry.py` checks this). Don't reorder the array. Then restart the API (`docker compose restart api`) — it loads the model once at startup, so a running process keeps serving the old one — and confirm `GET /model/info` reports the new version.
+
+`src/train.py` never changes what is served: a new entry is appended, and `latest_version` is pinned to whatever the API served before (the deployed entry, else the existing `latest_version`, else the last entry). Training and the API share one definition of that choice, `select_served_entry()` in `src/train.py`. Run one training process at a time against a models directory: `save_model()` does not lock the registry, so two concurrent runs could pick the same version.
 
 This exists because of a real incident: the API was silently serving v2.0 (LOF) via array-position fallback while every doc and the project narrative claimed v1.0 (Isolation Forest) was in production. Confirm this stays fixed by checking `GET /model/info` reports `"version": "1.0"` after any registry change.
 
@@ -78,11 +80,11 @@ If the check fires unexpectedly, the artefact on disk no longer matches what was
 
 ## Known gotchas
 
-**slowapi parameter ordering.** Any rate-limited endpoint (decorated with `@limiter.limit(...)`) must declare `request: Request` as its *first* parameter, with the request body named `payload` (or similarly, after `request`) — never `request`, or it collides with the Starlette object slowapi needs. slowapi's exception handler needs `request` on the function signature to work; if you add a new limited endpoint and put the body first, the limiter breaks in a way that's easy to miss locally and only shows up under load. See `score_readings(request: Request, body: BatchScoreRequest)` in `src/serve.py` for the pattern to copy.
+**slowapi needs a parameter named `request`.** Any endpoint decorated with `@limiter.limit(...)` must take a `request: Request` parameter, and it must be called exactly `request`; its position does not matter. Without it slowapi raises `No "request" or "websocket" argument on function` when the module is imported, so the app will not start. Don't name the request body `request` either, or it collides with the Starlette object slowapi needs. See `score_readings(request: Request, body: BatchScoreRequest)` in `src/serve.py` for the pattern to copy.
 
 **The rate limiter keys on `CF-Connecting-IP`.** `client_identifier()` in `src/serve.py` prefers that header and falls back to the socket address. This is deliberate and assumes Cloudflare is the only ingress: behind `cloudflared` the socket peer is the local tunnel endpoint, so `get_remote_address` would put every caller in one shared bucket. Cloudflare sets `CF-Connecting-IP` itself and strips any client-supplied copy — **if the API is ever exposed without Cloudflare in front, that header becomes caller-controlled and the limit is trivially evadable.** Revisit the key function before changing the topology.
 
-Current limits, sized for a Pi 5: `/anomaly/score` 30/min, `/timeseries` 20/min, `/anomalies` 10/min. Note that request-body validation runs *before* the limiter, so a malformed payload is rejected without consuming quota.
+Current limits, sized for a Pi 5: `/anomaly/score` 30/min, `/timeseries` 20/min, `/anomalies` 10/min. Request-body validation and the API-key check both run *before* the limiter, so a malformed payload or a request without a valid key is rejected without consuming quota. `tests/test_serve_ratelimit.py` asserts both.
 
 **Read env vars inside the function, not at module import time.** `verify_api_key()` in `src/serve.py` calls `os.getenv("SMARTLITE_API_KEY")` inside the function body rather than caching it in a module-level constant at import time. Do the same for any new env-derived config that needs to reflect the current environment (tests monkeypatch env vars per-test; a module-level read would freeze the value at first import and ignore later changes).
 
@@ -108,13 +110,13 @@ make dev                     # API on :8000, dashboard on :8501
 
 ## Where things stand relative to the collaboration-readiness PRD
 
-Phase 0 (this audit) fixed the model-loading bug, untracked `.env`/`compose/.env`/`egg-info`/`.pyc`, and committed this file. Phase 1 (base-load estimator) follows in `src/baseload.py`. See the PRD for the full phased plan (API contract hardening, external auth, swappable LLM backend, real data ingestion).
+Phase 0 (this audit) fixed the model-loading bug, untracked `.env`/`compose/.env`/`egg-info`/`.pyc`, and committed this file. Phase 1 (base-load estimator) follows in `src/baseload.py`. See the unified PRD (v1.2, kept outside this repository) for the full phased plan (API contract hardening, external auth, swappable LLM backend, real data ingestion).
 
-Phase S (the August 2026 security review, gating the Pi deployment) closed out as follows:
+Phase S (the August 2026 security review, gating the Pi deployment) closed out as follows. The full record, with commits, tests and on-device verification per finding, is in `docs/security-review-2026-08.md`.
 
 | # | Finding | State |
 |---|---------|-------|
-| 1 | Model integrity check failed open | Fixed — fail-closed verification + `scripts/backfill_model_hashes.py`. **The registry still needs the backfill run where the `.joblib` artefacts live; until then the API starts with no model.** |
+| 1 | Model integrity check failed open | Fixed — fail-closed verification + `scripts/backfill_model_hashes.py`. Hashes backfilled and committed in `f20f4eb`; integrity-checked load confirmed on the Pi on 17 August 2026 (`docs/results-report-2026-08.md`, section 4) |
 | 2 | Unauthenticated dashboard reaching an agent with a retrain tool | Fixed — retrain tool removed, dashboard gated on `SMARTLITE_DASHBOARD_PASSWORD`, exposure rules documented above |
 | 3 | Rate limiting ineffective behind the tunnel, absent on heavy reads | Fixed — `CF-Connecting-IP` key function, limits on `/timeseries` and `/anomalies` |
 | 4 | Non-ASCII `X-API-Key` returned 500 | Fixed — byte comparison |
@@ -123,4 +125,4 @@ Phase S (the August 2026 security review, gating the Pi deployment) closed out a
 | 7 | `latest_version` disagreed with the deployed model | Fixed — reads `"1.0"`, guarded by `tests/test_registry.py` |
 | 8 | Stale `API_KEY` / `docs/PROJECT_PLAN.md` / `docs/SETUP.md` references | Already resolved before this pass — no such references existed in this file |
 
-Operator actions that remain outside the repo: run the hash backfill and commit the registry, transfer the artefacts, configure the tunnel for port 8000 only, and put an auth layer in front of 8501 (or keep it on the LAN).
+Operator actions completed on the Pi on 17 August 2026 (`docs/results-report-2026-08.md`): hash backfill committed (`f20f4eb`), artefacts transferred and verified on load, and only the API (port 8000) published through the tunnel. Still outstanding: a named tunnel with a stable hostname (a prerequisite for B1), and an auth layer in front of port 8501 before the dashboard is ever reachable beyond the LAN.

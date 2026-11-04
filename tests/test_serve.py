@@ -2,6 +2,8 @@
 
 import json
 import os
+import sqlite3
+from unittest.mock import patch
 
 import numpy as np
 import pandas as pd
@@ -10,6 +12,7 @@ from fastapi.testclient import TestClient
 from sklearn.preprocessing import StandardScaler
 
 from src.detect import AnomalyDetector
+from src.ingest import init_db
 from src.serve import app, readings_to_dataframe
 from src.train import (
     evaluate_model,
@@ -144,17 +147,26 @@ class TestScoreEndpoint:
 
 
 class TestTimeSeriesEndpoint:
-    def test_returns_404_for_empty_data(self, client):
-        response = client.get(
-            "/timeseries",
-            params={
-                "start": "2099-01-01T00:00:00",
-                "end": "2099-01-02T00:00:00",
-                "site_id": "nonexistent",
-            },
-        )
-        # Should return 404 or 503 depending on DB state
-        assert response.status_code in [404, 503]
+    def test_returns_404_for_empty_data(self, client, tmp_path):
+        # Use a throwaway database with the real schema, so the test neither
+        # depends on nor creates data/processed/energy.db.
+        db_path = str(tmp_path / "energy.db")
+        init_db(db_path).close()
+
+        with patch(
+            "src.serve.get_db_connection",
+            side_effect=lambda *_: sqlite3.connect(db_path, check_same_thread=False),
+        ):
+            response = client.get(
+                "/timeseries",
+                params={
+                    "start": "2099-01-01T00:00:00",
+                    "end": "2099-01-02T00:00:00",
+                    "site_id": "nonexistent",
+                },
+            )
+
+        assert response.status_code == 404
 
 
 class TestAnomaliesEndpoint:
