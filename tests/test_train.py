@@ -7,16 +7,20 @@ import tempfile
 import numpy as np
 import pandas as pd
 import pytest
+from sklearn.neighbors import LocalOutlierFactor
 from sklearn.preprocessing import StandardScaler
 
 from src.detect import AnomalyDetector
 from src.train import (
     evaluate_model,
+    flag_agreement,
     get_next_version,
     get_numeric_features,
+    monthly_flag_rates,
     save_model,
     train_isolation_forest,
     train_lof,
+    training_flags,
 )
 
 
@@ -124,6 +128,75 @@ class TestEvaluateModel:
 
         assert metrics["n_anomalies"] > 0
         assert metrics["n_anomalies"] < metrics["n_total"]
+
+
+class TestTrainingFlags:
+    def test_lof_training_flags_match_fit_predict(self, scaled_data):
+        """Training-set flags equal what novelty=False fit_predict returns."""
+        X, _, _ = scaled_data
+        model = train_lof(X, contamination=0.05)
+        expected = LocalOutlierFactor(
+            n_neighbors=20, contamination=0.05, novelty=False
+        ).fit_predict(X)
+
+        predictions, _ = training_flags(model, X)
+
+        np.testing.assert_array_equal(predictions, expected)
+
+    def test_lof_training_flag_rate_matches_contamination(self, scaled_data):
+        X, _, _ = scaled_data
+        model = train_lof(X, contamination=0.05)
+
+        predictions, _ = training_flags(model, X)
+
+        assert (predictions == -1).mean() == pytest.approx(0.05, abs=1 / len(X))
+
+    def test_lof_rejects_a_different_matrix(self, scaled_data):
+        X, _, _ = scaled_data
+        model = train_lof(X, contamination=0.05)
+
+        with pytest.raises(ValueError):
+            training_flags(model, X[:10])
+
+    def test_isolation_forest_uses_predict(self, scaled_data):
+        X, _, _ = scaled_data
+        model = train_isolation_forest(X, contamination=0.05)
+
+        predictions, scores = training_flags(model, X)
+
+        np.testing.assert_array_equal(predictions, model.predict(X))
+        np.testing.assert_allclose(scores, model.decision_function(X))
+
+
+class TestFlagAgreement:
+    def test_identical_flags(self):
+        pred = np.array([1, 1, -1, 1, -1])
+
+        result = flag_agreement(pred, pred)
+
+        assert result["cohen_kappa"] == 1.0
+        assert result["jaccard"] == 1.0
+        assert result["flagged_both"] == 2
+
+    def test_disjoint_flags(self):
+        result = flag_agreement(np.array([-1, 1, 1, 1]), np.array([1, -1, 1, 1]))
+
+        assert result["flagged_both"] == 0
+        assert result["jaccard"] == 0.0
+        assert result["cohen_kappa"] < 0
+
+    def test_length_mismatch_raises(self):
+        with pytest.raises(ValueError):
+            flag_agreement(np.array([1, -1]), np.array([1]))
+
+
+class TestMonthlyFlagRates:
+    def test_rates_per_month(self):
+        idx = pd.to_datetime(["2024-01-01", "2024-01-02", "2024-02-01", "2024-02-02"])
+
+        rates = monthly_flag_rates(idx, np.array([-1, 1, 1, 1]))
+
+        assert rates == {"2024-01": 0.5, "2024-02": 0.0}
 
 
 class TestModelRegistry:

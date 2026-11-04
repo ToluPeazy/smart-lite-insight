@@ -148,7 +148,8 @@ def train_lof(
 ) -> LocalOutlierFactor:
     """Train a Local Outlier Factor model.
 
-    Note: LOF with novelty=True can be used for prediction on new data.
+    Note: novelty=True allows scoring *new* data. Do not call predict() on the
+    training data; use training_flags() instead.
 
     Args:
         X: Scaled feature matrix.
@@ -171,28 +172,82 @@ def train_lof(
 # ── Evaluation ──
 
 
+def training_flags(model, X: np.ndarray) -> tuple[np.ndarray, np.ndarray]:
+    """Return (predictions, scores) for the data the model was fitted on.
+
+    `LocalOutlierFactor(novelty=True)` must not be scored with `predict()` /
+    `decision_function()` on its own training data: each point is returned as
+    one of its own neighbours, which biases it towards "inlier". For training
+    data use the fit-time `negative_outlier_factor_` against `offset_`, which
+    is exactly what `fit_predict()` with `novelty=False` would return.
+
+    Predictions follow the sklearn convention: 1 = normal, -1 = flagged.
+    """
+    if isinstance(model, LocalOutlierFactor):
+        if len(X) != len(model.negative_outlier_factor_):
+            raise ValueError("training_flags() needs the matrix the LOF was fitted on")
+        scores = model.negative_outlier_factor_ - model.offset_
+        predictions = np.where(scores < 0, -1, 1)
+        return predictions, scores
+
+    return model.predict(X), model.decision_function(X)
+
+
+def flag_agreement(pred_a: np.ndarray, pred_b: np.ndarray) -> dict:
+    """Agreement between two models' flags on the same rows.
+
+    There are no ground-truth labels, so this measures agreement only: it says
+    nothing about which model is right.
+    """
+    a = np.asarray(pred_a) == -1
+    b = np.asarray(pred_b) == -1
+    n = len(a)
+    if n == 0 or n != len(b):
+        raise ValueError("Predictions must be non-empty and the same length")
+
+    observed = float(np.mean(a == b))
+    pa, pb = a.mean(), b.mean()
+    expected = float(pa * pb + (1 - pa) * (1 - pb))
+    kappa = 1.0 if expected == 1.0 else (observed - expected) / (1 - expected)
+    union = int((a | b).sum())
+
+    return {
+        "n": n,
+        "flagged_a": int(a.sum()),
+        "flagged_b": int(b.sum()),
+        "flagged_both": int((a & b).sum()),
+        "jaccard": (int((a & b).sum()) / union) if union else 1.0,
+        "cohen_kappa": round(float(kappa), 4),
+    }
+
+
+def monthly_flag_rates(index: pd.Index, predictions: np.ndarray) -> dict[str, float]:
+    """Share of rows flagged per calendar month (a stability check, not accuracy)."""
+    flagged = pd.Series(np.asarray(predictions) == -1, index=pd.DatetimeIndex(index))
+    rates = flagged.groupby(flagged.index.to_period("M")).mean()
+    return {str(period): round(float(rate), 4) for period, rate in rates.items()}
+
+
 def evaluate_model(
     model,
     X: np.ndarray,
     model_name: str,
 ) -> dict:
-    """Evaluate an anomaly detection model.
+    """Summarise a fitted model's flags and scores on its training data.
 
-    Since we don't have ground-truth labels for all data, we evaluate
-    using the model's own predictions and anomaly scores to report
-    detection statistics.
+    There are no ground-truth labels, so these are descriptive statistics, not
+    detection performance. With `contamination` set, the flag rate on the
+    training data is fixed by construction (≈ contamination).
 
     Args:
         model: Fitted sklearn anomaly detection model.
-        X: Scaled feature matrix.
+        X: The scaled feature matrix the model was fitted on.
         model_name: Name for logging.
 
     Returns:
         Dict with evaluation metrics.
     """
-    # Predict: 1 = normal, -1 = anomaly (sklearn convention)
-    predictions = model.predict(X)
-    scores = model.decision_function(X)
+    predictions, scores = training_flags(model, X)
 
     n_anomalies = (predictions == -1).sum()
     n_total = len(predictions)
@@ -431,6 +486,14 @@ def train_pipeline(
             "metrics": lof_metrics,
         }
 
+        if_pred, _ = training_flags(if_model, X)
+        lof_pred, _ = training_flags(lof_model, X)
+        results["agreement"] = flag_agreement(if_pred, lof_pred)
+        results["monthly_flag_rates"] = {
+            "isolation_forest": monthly_flag_rates(df.index, if_pred),
+            "lof": monthly_flag_rates(df.index, lof_pred),
+        }
+
         # Compare
         logger.info("\n" + "=" * 50)
         logger.info("MODEL COMPARISON")
@@ -440,6 +503,12 @@ def train_pipeline(
             logger.info(
                 f"  {m['model_name']}: {m['n_anomalies']:,} anomalies ({m['anomaly_rate']:.2%})"
             )
+        agreement = results["agreement"]
+        logger.info(
+            f"  IF–LOF agreement: kappa={agreement['cohen_kappa']:.3f}, "
+            f"jaccard={agreement['jaccard']:.3f}, "
+            f"flagged by both={agreement['flagged_both']:,}"
+        )
         logger.info("=" * 50)
 
     return results
