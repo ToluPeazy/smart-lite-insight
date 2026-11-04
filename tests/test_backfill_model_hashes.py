@@ -5,7 +5,7 @@ import json
 
 import pytest
 
-from scripts.backfill_model_hashes import backfill_registry
+from scripts.backfill_model_hashes import backfill_registry, main
 
 
 def write_registry(models_dir, entry_overrides=None):
@@ -99,3 +99,44 @@ class TestBackfillRegistry:
         AnomalyDetector._verify_integrity(
             tmp_path / entry["scaler_file"], entry["scaler_hash"], "Scaler"
         )
+
+
+class TestCli:
+    """The CLI keeps `--dry-run` and a default `--models-dir` of `models`."""
+
+    def test_dry_run_flag_does_not_write(self, tmp_path, monkeypatch, capsys):
+        registry_path = write_registry(tmp_path)
+        before = registry_path.read_text()
+        monkeypatch.setattr(
+            "sys.argv", ["backfill", "--models-dir", str(tmp_path), "--dry-run"]
+        )
+
+        assert main() == 0
+        assert registry_path.read_text() == before
+        assert "Dry run" in capsys.readouterr().out
+
+    def test_models_dir_defaults_to_models(self, tmp_path, monkeypatch):
+        models_dir = tmp_path / "models"
+        models_dir.mkdir()
+        registry_path = write_registry(models_dir)
+        monkeypatch.chdir(tmp_path)
+        monkeypatch.setattr("sys.argv", ["backfill"])
+
+        assert main() == 0
+        entry = json.loads(registry_path.read_text())["models"][0]
+        assert "model_hash" in entry
+        assert "scaler_hash" in entry
+
+    def test_missing_registry_exits_cleanly(self, tmp_path, monkeypatch, capsys):
+        monkeypatch.setattr("sys.argv", ["backfill", "--models-dir", str(tmp_path)])
+
+        assert main() == 2
+        err = capsys.readouterr().err
+        assert err.startswith("error: Registry not found")
+        assert "Traceback" not in err
+
+    def test_mismatch_exits_non_zero(self, tmp_path, monkeypatch):
+        write_registry(tmp_path, {"model_hash": "0" * 64})
+        monkeypatch.setattr("sys.argv", ["backfill", "--models-dir", str(tmp_path)])
+
+        assert main() == 1
