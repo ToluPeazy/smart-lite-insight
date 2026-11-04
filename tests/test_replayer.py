@@ -1,11 +1,13 @@
 """Tests for seed/replayer.py"""
 
+import sqlite3
 from datetime import datetime
 
 from seed.replayer import (
     generate_dataset,
     generate_reading,
     get_load_multiplier,
+    main,
     replay_bulk,
 )
 
@@ -129,3 +131,18 @@ class TestReplayBulk:
         cursor = conn.execute("SELECT DISTINCT site_id FROM readings")
         assert cursor.fetchone()[0] == "home-synth"
         conn.close()
+
+
+class TestCli:
+    def test_site_id_flag_sets_the_site(self, tmp_db, monkeypatch):
+        monkeypatch.setattr(
+            "sys.argv",
+            ["replayer", "--days", "1", "--db-path", tmp_db, "--site-id", "home-01"],
+        )
+
+        main()
+
+        conn = sqlite3.connect(tmp_db)
+        sites = conn.execute("SELECT DISTINCT site_id FROM readings").fetchall()
+        conn.close()
+        assert sites == [("home-01",)]
