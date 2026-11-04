@@ -56,7 +56,13 @@ def load_training_data(
 
     Returns:
         Feature-engineered DataFrame ready for training.
+
+    Raises:
+        ValueError: If sample_frac is outside (0, 1].
     """
+    if sample_frac is not None and not 0 < sample_frac <= 1:
+        raise ValueError(f"sample_frac must be in (0, 1], got {sample_frac}")
+
     conn = sqlite3.connect(db_path)
     df = pd.read_sql_query(
         """
@@ -189,7 +195,15 @@ def training_flags(model, X: np.ndarray) -> tuple[np.ndarray, np.ndarray]:
     Predictions follow the sklearn convention: 1 = normal, -1 = flagged.
     """
     if isinstance(model, LocalOutlierFactor):
-        if len(X) != len(model.negative_outlier_factor_):
+        # `_fit_X` is scikit-learn's stored copy of the fitting data. It is
+        # private, so fall back to a row-count check if it is ever absent.
+        fitted = getattr(model, "_fit_X", None)
+        same = (
+            np.array_equal(np.asarray(X), fitted)
+            if fitted is not None
+            else len(X) == len(model.negative_outlier_factor_)
+        )
+        if not same:
             raise ValueError("training_flags() needs the matrix the LOF was fitted on")
         scores = model.negative_outlier_factor_ - model.offset_
         predictions = np.where(scores < 0, -1, 1)
@@ -296,6 +310,26 @@ def evaluate_model(
 # ── Model Registry ──
 
 
+def select_served_entry(registry: dict) -> dict | None:
+    """Return the registry entry the API serves, or None for an empty registry.
+
+    Order: the entry flagged `"deployed": true`; else the entry matching
+    `latest_version`; else the last entry (registries older than both fields).
+    `AnomalyDetector` uses this, so training and serving agree on it.
+    """
+    models = registry.get("models") or []
+    if not models:
+        return None
+
+    deployed = [m for m in models if m.get("deployed")]
+    if deployed:
+        return deployed[-1]
+
+    latest_version = registry.get("latest_version")
+    matches = [m for m in models if m["version"] == latest_version]
+    return matches[-1] if matches else models[-1]
+
+
 def get_next_version(models_dir: str = DEFAULT_MODELS_DIR) -> str:
     """Get the next semantic version from the registry.
 
@@ -382,12 +416,15 @@ def save_model(
         "score_stats": metrics["score_stats"],
     }
 
+    # Training never changes what is served. `latest_version` is pinned to the
+    # entry the API serves *before* this one is appended (the deployed entry if
+    # flagged), or to this version for the first model in a new registry.
+    # Promoting a later version is a deliberate operator step (HANDOFF.md).
+    served = select_served_entry(registry)
+
     registry["models"].append(entry)
     registry["last_updated"] = datetime.now().isoformat()
-    # latest_version tracks the deployed model, not the newest one. It is only
-    # set for the first model in a new registry; promoting a later version is a
-    # deliberate operator step (see HANDOFF.md, "Model registry").
-    registry.setdefault("latest_version", version)
+    registry["latest_version"] = served["version"] if served else version
 
     with open(registry_path, "w") as f:
         json.dump(registry, f, indent=2)
@@ -407,6 +444,7 @@ def train_pipeline(
     contamination: float = DEFAULT_CONTAMINATION,
     compare: bool = False,
     sample_frac: float | None = None,
+    models_dir: str = DEFAULT_MODELS_DIR,
 ) -> dict:
     """Run the full training pipeline.
 
@@ -415,6 +453,7 @@ def train_pipeline(
         contamination: Expected anomaly rate.
         compare: If True, train both IF and LOF and compare.
         sample_frac: Optional subsample fraction for faster iteration.
+        models_dir: Directory holding the registry and model files.
 
     Returns:
         Dict with training results.
@@ -443,6 +482,7 @@ def train_pipeline(
         feature_names,
         if_metrics,
         model_name="isolation_forest",
+        models_dir=models_dir,
     )
     results["isolation_forest"] = {
         "version": version,
@@ -460,6 +500,7 @@ def train_pipeline(
             feature_names,
             lof_metrics,
             model_name="lof",
+            models_dir=models_dir,
         )
         results["lof"] = {
             "version": lof_version,
@@ -478,8 +519,8 @@ def train_pipeline(
         logger.info("\n" + "=" * 50)
         logger.info("MODEL COMPARISON")
         logger.info("=" * 50)
-        for _name, r in results.items():
-            m = r["metrics"]
+        for name in ("isolation_forest", "lof"):
+            m = results[name]["metrics"]
             logger.info(
                 f"  {m['model_name']}: {m['n_anomalies']:,} anomalies ({m['anomaly_rate']:.2%})"
             )
@@ -489,6 +530,10 @@ def train_pipeline(
             f"jaccard={agreement['jaccard']:.3f}, "
             f"flagged by both={agreement['flagged_both']:,}"
         )
+        logger.info("  Monthly flag rates (IF / LOF):")
+        for month, if_rate in results["monthly_flag_rates"]["isolation_forest"].items():
+            lof_rate = results["monthly_flag_rates"]["lof"].get(month, float("nan"))
+            logger.info(f"    {month}: {if_rate:.2%} / {lof_rate:.2%}")
         logger.info("=" * 50)
 
     return results

@@ -18,6 +18,7 @@ from src.train import (
     get_numeric_features,
     monthly_flag_rates,
     save_model,
+    select_served_entry,
     train_isolation_forest,
     train_lof,
     training_flags,
@@ -151,6 +152,13 @@ class TestTrainingFlags:
 
         assert (predictions == -1).mean() == pytest.approx(0.05, abs=1 / len(X))
 
+    def test_lof_rejects_a_same_size_different_matrix(self, scaled_data):
+        X, _, _ = scaled_data
+        model = train_lof(X, contamination=0.05)
+
+        with pytest.raises(ValueError):
+            training_flags(model, X[::-1].copy())
+
     def test_lof_rejects_a_different_matrix(self, scaled_data):
         X, _, _ = scaled_data
         model = train_lof(X, contamination=0.05)
@@ -219,6 +227,108 @@ class TestLatestVersion:
         assert AnomalyDetector(models_dir=tmp_models_dir).metadata["version"] == "1.0"
 
 
+def _save_twice_with_registry_edit(scaled_data, models_dir, edit):
+    """Save one model, edit the registry JSON, then save a second model."""
+    X, scaler, feature_names = scaled_data
+    model = train_isolation_forest(X, contamination=0.01)
+    metrics = evaluate_model(model, X, "isolation_forest")
+    save_model(model, scaler, feature_names, metrics, "isolation_forest", models_dir)
+
+    registry_path = os.path.join(models_dir, "registry.json")
+    with open(registry_path) as f:
+        registry = json.load(f)
+    edit(registry)
+    with open(registry_path, "w") as f:
+        json.dump(registry, f)
+
+    save_model(model, scaler, feature_names, metrics, "lof", models_dir)
+    with open(registry_path) as f:
+        return json.load(f)
+
+
+class TestServedModelIsPreserved:
+    def test_legacy_registry_keeps_serving_the_last_entry(
+        self, scaled_data, tmp_models_dir
+    ):
+        """No latest_version and no deployed flag: v1.0 stays served."""
+        registry = _save_twice_with_registry_edit(
+            scaled_data, tmp_models_dir, lambda r: r.pop("latest_version")
+        )
+
+        assert registry["latest_version"] == "1.0"
+        assert AnomalyDetector(models_dir=tmp_models_dir).metadata["version"] == "1.0"
+
+    def test_missing_latest_version_is_taken_from_the_deployed_entry(
+        self, scaled_data, tmp_models_dir
+    ):
+        def edit(registry):
+            registry.pop("latest_version")
+            registry["models"][0]["deployed"] = True
+
+        registry = _save_twice_with_registry_edit(scaled_data, tmp_models_dir, edit)
+
+        assert registry["latest_version"] == "1.0"
+
+    def test_latest_version_is_synchronised_with_the_deployed_entry(
+        self, scaled_data, tmp_models_dir
+    ):
+        def edit(registry):
+            registry["latest_version"] = "9.9"  # stale value
+            registry["models"][0]["deployed"] = True
+
+        registry = _save_twice_with_registry_edit(scaled_data, tmp_models_dir, edit)
+
+        assert registry["latest_version"] == "1.0"
+
+
+class TestSelectServedEntry:
+    def test_empty_registry(self):
+        assert select_served_entry({"models": []}) is None
+
+    def test_deployed_wins(self):
+        registry = {
+            "latest_version": "2.0",
+            "models": [{"version": "1.0", "deployed": True}, {"version": "2.0"}],
+        }
+
+        assert select_served_entry(registry)["version"] == "1.0"
+
+    def test_latest_version_without_deployed(self):
+        registry = {
+            "latest_version": "1.0",
+            "models": [{"version": "1.0"}, {"version": "2.0"}],
+        }
+
+        assert select_served_entry(registry)["version"] == "1.0"
+
+    def test_falls_back_to_last_entry(self):
+        registry = {"models": [{"version": "1.0"}, {"version": "2.0"}]}
+
+        assert select_served_entry(registry)["version"] == "2.0"
+
+
+class TestComparePipeline:
+    def test_compare_completes_and_reports_agreement(self, tmp_path):
+        from seed.replayer import replay_bulk
+        from src.train import train_pipeline
+
+        db_path = str(tmp_path / "energy.db")
+        models_dir = str(tmp_path / "models")
+        replay_bulk(days=3, db_path=db_path, site_id="home-01", seed=7)
+
+        results = train_pipeline(db_path=db_path, compare=True, models_dir=models_dir)
+
+        assert (
+            results["agreement"]["n"]
+            == results["isolation_forest"]["metrics"]["n_total"]
+        )
+        assert set(results["monthly_flag_rates"]) == {"isolation_forest", "lof"}
+        with open(os.path.join(models_dir, "registry.json")) as f:
+            registry = json.load(f)
+        assert [m["version"] for m in registry["models"]] == ["1.0", "2.0"]
+        assert registry["latest_version"] == "1.0"
+
+
 class TestSampleFrac:
     def test_features_are_built_before_subsampling(self, tmp_path):
         """Sampled rows must equal the same rows of the full feature matrix."""
@@ -233,6 +343,16 @@ class TestSampleFrac:
 
         assert 0 < len(sampled) < len(full)
         pd.testing.assert_frame_equal(sampled, full.loc[sampled.index])
+
+    @pytest.mark.parametrize("frac", [0, -0.1, 1.5, 5])
+    def test_invalid_fraction_is_rejected_before_loading(self, tmp_path, frac):
+        from src.train import load_training_data
+
+        db_path = tmp_path / "never-created.db"
+
+        with pytest.raises(ValueError, match="sample_frac"):
+            load_training_data(db_path=str(db_path), sample_frac=frac)
+        assert not db_path.exists()
 
 
 class TestModelRegistry:
