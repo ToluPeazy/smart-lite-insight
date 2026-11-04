@@ -323,6 +323,10 @@ class TestComparePipeline:
             == results["isolation_forest"]["metrics"]["n_total"]
         )
         assert set(results["monthly_flag_rates"]) == {"isolation_forest", "lof"}
+        for name in ("isolation_forest", "lof"):
+            timing = results[name]["timing"]
+            assert timing["fit_seconds"] >= 0
+            assert timing["eval_seconds"] >= 0
         with open(os.path.join(models_dir, "registry.json")) as f:
             registry = json.load(f)
         assert [m["version"] for m in registry["models"]] == ["1.0", "2.0"]

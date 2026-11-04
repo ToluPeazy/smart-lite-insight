@@ -19,6 +19,7 @@ import argparse
 import hashlib
 import json
 import sqlite3
+import time
 from datetime import datetime
 from pathlib import Path
 
@@ -436,6 +437,19 @@ def save_model(
     return version
 
 
+def _timing(started: float, fitted: float, evaluated: float, label: str) -> dict:
+    """Wall-clock seconds for fitting and for training-set evaluation."""
+    timing = {
+        "fit_seconds": round(fitted - started, 3),
+        "eval_seconds": round(evaluated - fitted, 3),
+    }
+    logger.info(
+        f"  {label} timing: fit {timing['fit_seconds']:.1f}s, "
+        f"evaluation {timing['eval_seconds']:.1f}s"
+    )
+    return timing
+
+
 # ── Main Training Pipeline ──
 
 
@@ -474,8 +488,11 @@ def train_pipeline(
 
     # Train Isolation Forest
     logger.info("Training Isolation Forest...")
+    started = time.perf_counter()
     if_model = train_isolation_forest(X, contamination=contamination)
+    fitted = time.perf_counter()
     if_metrics = evaluate_model(if_model, X, "Isolation Forest")
+    if_timing = _timing(started, fitted, time.perf_counter(), "Isolation Forest")
     version = save_model(
         if_model,
         scaler,
@@ -487,13 +504,17 @@ def train_pipeline(
     results["isolation_forest"] = {
         "version": version,
         "metrics": if_metrics,
+        "timing": if_timing,
     }
 
     # Optionally train LOF for comparison
     if compare:
         logger.info("Training Local Outlier Factor...")
+        started = time.perf_counter()
         lof_model = train_lof(X, contamination=contamination)
+        fitted = time.perf_counter()
         lof_metrics = evaluate_model(lof_model, X, "Local Outlier Factor")
+        lof_timing = _timing(started, fitted, time.perf_counter(), "LOF")
         lof_version = save_model(
             lof_model,
             scaler,
@@ -505,6 +526,7 @@ def train_pipeline(
         results["lof"] = {
             "version": lof_version,
             "metrics": lof_metrics,
+            "timing": lof_timing,
         }
 
         if_pred, _ = training_flags(if_model, X)
