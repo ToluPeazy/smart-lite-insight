@@ -10,7 +10,13 @@ import pandas as pd
 import pytest
 from fastapi.testclient import TestClient
 
-from src.serve import ReadingInput, app, get_db_connection, readings_to_dataframe
+from src.serve import (
+    ReadingInput,
+    app,
+    database_ready,
+    get_db_connection,
+    readings_to_dataframe,
+)
 
 # client = TestClient(app)
 
@@ -348,3 +354,35 @@ class TestAnomaliesEndpointWithData:
             )
 
         assert response.status_code == 200
+
+
+class TestDatabaseReady:
+    def test_missing_file_is_not_ready_and_not_created(self, tmp_path):
+        db_path = tmp_path / "missing.db"
+
+        assert database_ready(str(db_path)) is False
+        assert not db_path.exists()
+
+    def test_database_without_readings_table_is_not_ready(self, tmp_path):
+        db_path = tmp_path / "empty.db"
+        sqlite3.connect(db_path).close()
+
+        assert database_ready(str(db_path)) is False
+
+    def test_database_with_readings_table_is_ready(self, tmp_path):
+        db_path = tmp_path / "energy.db"
+        conn = sqlite3.connect(db_path)
+        conn.execute("CREATE TABLE readings (timestamp TEXT)")
+        conn.close()
+
+        assert database_ready(str(db_path)) is True
+
+    def test_health_details_reports_missing_database(self, tmp_path):
+        db_path = tmp_path / "missing.db"
+
+        with patch("src.serve.DEFAULT_DB_PATH", str(db_path)):
+            response = client.get("/health/details")
+
+        assert response.status_code == 200
+        assert response.json()["database_accessible"] is False
+        assert not db_path.exists()
