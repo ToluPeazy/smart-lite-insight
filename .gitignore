@@ -54,3 +54,6 @@ logs/
 
 # ── Ruff cache ──
 .ruff_cache/
+
+# ── Local tool settings ──
+.claude/
