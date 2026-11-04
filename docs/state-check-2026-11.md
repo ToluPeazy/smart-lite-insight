@@ -13,6 +13,8 @@
 
 Effort: **S** < 30 min, **M** < half a day, **L** > half a day.
 
+Sections 1–4 record each finding's status **as found on 4 November 2026** and are left unchanged as the audit record. A `Gap` there is not an open item: what has since been fixed, and in which commit, is in section 6.
+
 ## 1. Baseline
 
 | ID | Area | Finding | Evidence | Status | Proposed action | Effort |
@@ -120,7 +122,9 @@ Everything blocking closure, and the smaller items listed above, was fixed in [T
 
 **Still open, and not blocking:**
 
-- **L2, L5, L6.** The UCI-scale size of the LOF bias, IF–LOF agreement and the LOF timing need a run on the machine that holds the data, using a documented subsample (`python -m src.train --compare --sample-frac <f>`).
+- **L2, L5.** The UCI-scale size of the LOF bias and IF–LOF agreement need a run on the machine that holds the data, using a documented subsample (`python -m src.train --compare --sample-frac <f>`).
+- **L6.** That run also logs fit and evaluation time per model (`fit_seconds`, `eval_seconds` in the results). The recorded 32 hours was measured with the old in-sample scoring, which ran two extra full k-nearest-neighbour passes. To see how much of it those passes were, also time `lof_model.predict(X)` once on the same subsample.
+- **Concurrent training (accepted limitation).** `save_model()` does not lock the registry, so two training processes writing to the same models directory at once could choose the same version and overwrite each other's files or registry entries. Training is a manual step run by one operator, so this is documented as a rule in `HANDOFF.md` (one training process per models directory) rather than enforced with a lock. Revisit it if training is ever automated or scheduled.
 - **R2.** Optionally set `"deployed": false` explicitly on v2.0.
 - **Unchanged API 404.** The API's 404 for an unknown `site_id` still does not name the available sites. Listing sites over the API is a contract change, so it is left for Phase 2.
 
