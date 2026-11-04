@@ -91,12 +91,18 @@ class TestTimeSeriesRateLimit:
                     headers={"CF-Connecting-IP": "198.51.100.11"},
                 )
 
+            exhausted = client.get(
+                "/timeseries",
+                params={"hours": 1},
+                headers={"CF-Connecting-IP": "198.51.100.11"},
+            )
             other = client.get(
                 "/timeseries",
                 params={"hours": 1},
                 headers={"CF-Connecting-IP": "198.51.100.12"},
             )
 
+        assert exhausted.status_code == 429
         assert other.status_code != 429
 
 
@@ -116,30 +122,63 @@ class TestAnomaliesRateLimit:
         assert statuses[-1] == 429
 
 
+SCORE_PAYLOAD = {
+    "readings": [
+        {
+            "timestamp": "2024-01-15T19:30:00",
+            "global_active_power_kw": 4.216,
+            "global_reactive_power_kw": 0.418,
+            "voltage_v": 234.84,
+            "global_intensity_a": 18.4,
+            "sub_metering_1_wh": 0.0,
+            "sub_metering_2_wh": 1.0,
+            "sub_metering_3_wh": 17.0,
+        }
+    ]
+}
+SCORE_LIMIT = 30  # @limiter.limit("30/minute") on /anomaly/score
+
+
 class TestScoreRateLimitStillApplies:
     def test_returns_429_over_the_limit(self):
         headers = {"CF-Connecting-IP": "198.51.100.30"}
         # A schema-valid body: request validation runs before the limiter, so a
         # malformed payload is rejected without consuming quota.
-        payload = {
-            "readings": [
-                {
-                    "timestamp": "2024-01-15T19:30:00",
-                    "global_active_power_kw": 4.216,
-                    "global_reactive_power_kw": 0.418,
-                    "voltage_v": 234.84,
-                    "global_intensity_a": 18.4,
-                    "sub_metering_1_wh": 0.0,
-                    "sub_metering_2_wh": 1.0,
-                    "sub_metering_3_wh": 17.0,
-                }
-            ]
-        }
-
         statuses = [
-            client.post("/anomaly/score", json=payload, headers=headers).status_code
-            for _ in range(31)
+            client.post(
+                "/anomaly/score", json=SCORE_PAYLOAD, headers=headers
+            ).status_code
+            for _ in range(SCORE_LIMIT + 1)
         ]
 
-        assert 429 not in statuses[:30]
+        assert 429 not in statuses[:SCORE_LIMIT]
         assert statuses[-1] == 429
+
+    def test_malformed_payload_does_not_consume_quota(self):
+        """Past the limit with invalid bodies, a valid request is still served."""
+        headers = {"CF-Connecting-IP": "198.51.100.31"}
+
+        malformed = [
+            client.post("/anomaly/score", json={}, headers=headers).status_code
+            for _ in range(SCORE_LIMIT + 5)
+        ]
+        valid = client.post("/anomaly/score", json=SCORE_PAYLOAD, headers=headers)
+
+        assert set(malformed) == {422}
+        assert valid.status_code != 429
+
+    def test_unauthenticated_requests_do_not_consume_quota(self):
+        """The API-key dependency rejects before the limiter is charged."""
+        headers = {"CF-Connecting-IP": "198.51.100.32"}
+        anonymous = TestClient(app)
+
+        rejected = [
+            anonymous.post(
+                "/anomaly/score", json=SCORE_PAYLOAD, headers=headers
+            ).status_code
+            for _ in range(SCORE_LIMIT + 5)
+        ]
+        authed = client.post("/anomaly/score", json=SCORE_PAYLOAD, headers=headers)
+
+        assert set(rejected) == {403}
+        assert authed.status_code != 429
