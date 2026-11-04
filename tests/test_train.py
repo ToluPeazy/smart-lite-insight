@@ -199,6 +199,42 @@ class TestMonthlyFlagRates:
         assert rates == {"2024-01": 0.5, "2024-02": 0.0}
 
 
+class TestLatestVersion:
+    def test_second_model_does_not_change_latest_version(
+        self, scaled_data, tmp_models_dir
+    ):
+        X, scaler, feature_names = scaled_data
+        model = train_isolation_forest(X, contamination=0.01)
+        metrics = evaluate_model(model, X, "isolation_forest")
+        save_model(
+            model, scaler, feature_names, metrics, "isolation_forest", tmp_models_dir
+        )
+        save_model(model, scaler, feature_names, metrics, "lof", tmp_models_dir)
+
+        with open(os.path.join(tmp_models_dir, "registry.json")) as f:
+            registry = json.load(f)
+
+        assert [m["version"] for m in registry["models"]] == ["1.0", "2.0"]
+        assert registry["latest_version"] == "1.0"
+        assert AnomalyDetector(models_dir=tmp_models_dir).metadata["version"] == "1.0"
+
+
+class TestSampleFrac:
+    def test_features_are_built_before_subsampling(self, tmp_path):
+        """Sampled rows must equal the same rows of the full feature matrix."""
+        from seed.replayer import replay_bulk
+        from src.train import load_training_data
+
+        db_path = str(tmp_path / "energy.db")
+        replay_bulk(days=3, db_path=db_path, site_id="home-01", seed=7)
+
+        full = load_training_data(db_path=db_path)
+        sampled = load_training_data(db_path=db_path, sample_frac=0.2)
+
+        assert 0 < len(sampled) < len(full)
+        pd.testing.assert_frame_equal(sampled, full.loc[sampled.index])
+
+
 class TestModelRegistry:
     def test_first_version(self, tmp_models_dir):
         version = get_next_version(tmp_models_dir)
@@ -314,7 +350,7 @@ class TestAnomalyDetector:
         registry_path = os.path.join(tmp_models_dir, "registry.json")
         with open(registry_path) as f:
             registry = json.load(f)
-        assert registry["latest_version"] == "2.0"  # the newer, non-deployed entry
+        assert registry["latest_version"] == "1.0"  # training does not promote
         registry["models"][0]["deployed"] = True
         with open(registry_path, "w") as f:
             json.dump(registry, f)

@@ -51,7 +51,8 @@ def load_training_data(
     Args:
         db_path: Path to SQLite database.
         site_id: Site to load data for.
-        sample_frac: Optional fraction to subsample (for faster iteration).
+        sample_frac: Optional fraction of feature rows to keep (for faster
+            iteration). Applied after feature engineering, seed 42.
 
     Returns:
         Feature-engineered DataFrame ready for training.
@@ -83,12 +84,16 @@ def load_training_data(
 
     df = df.set_index("timestamp")
 
-    if sample_frac is not None and sample_frac < 1.0:
-        df = df.sample(frac=sample_frac, random_state=42).sort_index()
-
     logger.info(f"Loaded {len(df):,} raw readings for site '{site_id}'")
 
+    # Features are built on the full, contiguous series: lags, rolling windows
+    # and differences assume consecutive 1-minute readings, so subsampling the
+    # raw rows first would compute them across random gaps.
     df_features = build_feature_matrix(df, drop_na=True)
+
+    if sample_frac is not None and sample_frac < 1.0:
+        df_features = df_features.sample(frac=sample_frac, random_state=42).sort_index()
+        logger.info(f"Subsampled feature rows: frac={sample_frac}, random_state=42")
     logger.info(
         f"Feature matrix: {df_features.shape[0]:,} rows × {df_features.shape[1]} columns"
     )
@@ -379,7 +384,10 @@ def save_model(
 
     registry["models"].append(entry)
     registry["last_updated"] = datetime.now().isoformat()
-    registry["latest_version"] = version
+    # latest_version tracks the deployed model, not the newest one. It is only
+    # set for the first model in a new registry; promoting a later version is a
+    # deliberate operator step (see HANDOFF.md, "Model registry").
+    registry.setdefault("latest_version", version)
 
     with open(registry_path, "w") as f:
         json.dump(registry, f, indent=2)
@@ -389,34 +397,6 @@ def save_model(
     logger.info(f"Registry updated: {registry_path}")
 
     return version
-
-
-def load_latest_model(models_dir: str = DEFAULT_MODELS_DIR) -> tuple:
-    """Load the latest model, scaler, and metadata from the registry.
-
-    Args:
-        models_dir: Path to models directory.
-
-    Returns:
-        Tuple of (model, scaler, registry_entry).
-    """
-    registry_path = Path(models_dir) / "registry.json"
-
-    with open(registry_path) as f:
-        registry = json.load(f)
-
-    if not registry.get("models"):
-        raise FileNotFoundError("No models in registry")
-
-    latest = registry["models"][-1]
-    models_path = Path(models_dir)
-
-    model = joblib.load(models_path / latest["model_file"])
-    scaler = joblib.load(models_path / latest["scaler_file"])
-
-    logger.info(f"Loaded model: {latest['model_file']} (v{latest['version']})")
-
-    return model, scaler, latest
 
 
 # ── Main Training Pipeline ──
