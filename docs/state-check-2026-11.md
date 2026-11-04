@@ -21,7 +21,7 @@ Effort: **S** < 30 min, **M** < half a day, **L** > half a day.
 | B2 | Tests | 192 passed, 0 failed. Coverage **81.17%** against the 70% gate (last recorded value about 79%). Lowest-covered module: `src/train.py` at 58%. | `pytest --cov=src --cov=seed --cov-config=.coveragerc` → `192 passed`, `Total coverage: 81.17%` | OK | None | — |
 | B3 | Lint | `ruff check .` → `All checks passed!`. `black --check .` → `34 files would be left unchanged`. The CI-scoped commands give the same result. | Command output | OK | None. The local black (26.x) is newer than the CI pin (`>=24.4`), so a CI run is still the authoritative check. | — |
 | B4 | Hygiene | `.env`, `__pycache__/` and `*.egg-info/` are untracked and ignored. `compose/.env`: the `compose/` directory does not exist, and the bare `.env` pattern in `.gitignore` would match it at any depth. | `git ls-files \| grep -E '\.env$\|__pycache__\|egg-info'` → no output; `.gitignore:2,4,26` | OK | None | — |
-| B6 | Hygiene | The test run leaves an untracked 0-byte `data/processed/energy.db`. The cause is R4. | File appeared at the pytest timestamp; reproduced in isolation (see R4) | Gap | Fixed by R4. Ignored by `.gitignore:30` in the meantime. | — |
+| B6 | Hygiene | The test run leaves an untracked 0-byte `data/processed/energy.db`. R4 is one way to create it, but the file in the test run comes from `tests/test_serve.py::TestTimeSeriesEndpoint`, which queries the real database path unpatched (corrected during resolution; the first version of this report attributed it to R4 alone). | File appeared at the pytest timestamp; bisected by test file and test | Gap | Point the test at a temporary database with the real schema. Ignored by `.gitignore:30` in the meantime. | S |
 
 ## 2. Sourcery follow-ups from PR #2
 
@@ -97,3 +97,31 @@ Source: [ToluPeazy/smart-lite-insight#2](https://github.com/ToluPeazy/smart-lite
 4. **HANDOFF has a stale Finding 1 status (R6).**
 
 R3, R4, R8, R9 and T1–T3 are real but small. They can be closed in this phase or carried into the Phase 2 backlog. The UCI magnitude of the LOF bias and the IF–LOF agreement (L2, L5, L6) need a documented-subsample run on the machine that holds the data; they cannot be verified here.
+
+## 6. Resolution
+
+Everything blocking closure, and the smaller items listed above, was fixed in [ToluPeazy/smart-lite-insight#3](https://github.com/ToluPeazy/smart-lite-insight/pull/3), merged as `c713ca8`. Each fix that changes behaviour comes with a test that fails on the code at `f9596c3`. At merge: 227 tests pass, coverage 89.6%, black and ruff clean.
+
+| ID | Resolution | Commit |
+|---|---|---|
+| S2, S3 | Backfill CLI exits with code 2 and a one-line error on a missing registry; CLI-level tests for `--dry-run`, the default directory, a missing registry and a mismatch. | `20c1170` |
+| S7, S8 | Rate-limit tests assert that malformed and unauthenticated requests do not consume quota, and that the exhausted client receives 429. | `e4fad1a` |
+| L1, L3, D10 | LOF training data scored from fit-time outlier factors; IF–LOF agreement and monthly flag rates reported by `--compare`. | `4e255a8` |
+| D1–D4 | README describes IF and LOF figures as training-set flag rates; LOF figure marked for re-evaluation. | `39fb0ae` |
+| D5–D9 | README and results-report claims limited to measured evidence. | `cd97092` |
+| R4, B6 | `/health/details` opens the database read-only and requires the `readings` table; the timeseries test uses a temporary database. | `d7eda2e` |
+| R3 | Replayer gains `--site-id`; the base-load error names the sites present in the database. | `30e2cde` |
+| T1, T2, T3 | `--sample-frac` applied after feature engineering; training no longer changes the served model; unverified `load_latest_model()` removed. | `950e4db` |
+| R9 | `dockerignore` renamed to `.dockerignore`. | `40cd99d` |
+| R6, R7, R8 | HANDOFF: Finding 1 and operator actions brought up to date, PRD location stated, slowapi gotcha corrected. | `75d9813` |
+| R1 | Phase S record committed as `docs/security-review-2026-08.md`, compiled from the committed remediation trail. This commit's message reads "record Phase R resolution in the state check"; the resolution itself was added afterwards, in this section. | `9e14b37` |
+| PR review | `--compare` no longer fails after saving; `latest_version` is pinned to the served entry using `select_served_entry()`, which the detector shares; invalid `sample_frac` rejected; LOF training flags checked against the fitted matrix; monthly flag rates logged. | `4a77136` |
+| PR review | HANDOFF promotion steps also set `latest_version` and restart the API; one training process per models directory. | `6deac3c` |
+
+**Still open, and not blocking:**
+
+- **L2, L5, L6.** The UCI-scale size of the LOF bias, IF–LOF agreement and the LOF timing need a run on the machine that holds the data, using a documented subsample (`python -m src.train --compare --sample-frac <f>`).
+- **R2.** Optionally set `"deployed": false` explicitly on v2.0.
+- **Unchanged API 404.** The API's 404 for an unknown `site_id` still does not name the available sites. Listing sites over the API is a contract change, so it is left for Phase 2.
+
+**Phase R is closed.**
