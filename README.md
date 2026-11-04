@@ -30,7 +30,7 @@ An end-to-end machine learning pipeline that ingests household energy data, dete
 ┌──────────────────────────────────────────────────────┐
 │                    ML LAYER                           │
 │  [Feature Engineering Pipeline]                      │
-│  (35+ features: lag, rolling, cyclical, sub-meter)   │
+│  (42 features: lag, rolling, cyclical, sub-meter)    │
 │         ↓                                            │
 │  [Isolation Forest]     [Local Outlier Factor]       │
 │  (33s training)         (~32h training)              │
@@ -147,7 +147,7 @@ smart-lite-insight/
 ├── src/
 │   ├── ingest.py                   # Data ingestion + scheduling
 │   ├── validate.py                 # Schema validation
-│   ├── features.py                 # Feature engineering (35+ features)
+│   ├── features.py                 # Feature engineering (42 features)
 │   ├── train.py                    # Model training + registry
 │   ├── detect.py                   # AnomalyDetector inference class
 │   ├── serve.py                    # FastAPI REST endpoints
@@ -246,9 +246,9 @@ Alternatively, run `python -m seed.replayer` to generate synthetic data with rea
 ## What I Learned
 
 - **Isolation Forest is far cheaper than LOF at this scale** — about 33 seconds against about 32 hours on 2M+ readings. Without ground-truth labels the two cannot be ranked on detection quality: both flag about 1% of training rows because contamination is set to 0.01, and they need not flag the same rows. LOF's cost is dominated by k-nearest-neighbour queries, which scale poorly to 2M rows in 42 dimensions.
-- **Feature engineering matters more than model choice** — 42 engineered features (temporal, lag, rolling, rate-of-change, sub-metering ratios) gave the Isolation Forest rich signal to work with.
-- **Edge deployment is viable** — the full stack (API + dashboard + model inference) runs comfortably on a Raspberry Pi 5 with 8GB RAM.
-- **LLM tool-calling bridges the gap** — non-technical users can query complex ML outputs through natural language, making the system genuinely accessible.
+- **Feature engineering was the main design effort** — 42 engineered features (temporal, lag, rolling, rate-of-change, sub-metering ratios). No ablation was run, so their effect has not been separated from the choice of model.
+- **Edge deployment of the API is viable** — on a Raspberry Pi 5 (8 GB), the API with model inference peaked at about 238 MB resident memory and scored a 24-hour batch in 65 ms at p95 (see `docs/results-report-2026-08.md`). The dashboard and the LLM were not profiled.
+- **LLM tool-calling as an interface** — the agent answers natural-language questions through five read-only tools over the same data and models. It has not been evaluated with users, so accessibility for non-technical users is a design aim, not a demonstrated result.
 - **Docker Compose simplifies everything** — one command to start the entire stack, reproducible across machines.
 
 ## License
